@@ -93,11 +93,24 @@ class NotificationService:
     # ==========================================
 
     async def _auto_positions_loop(self) -> None:
-        """Background loop to periodically broadcast /positions every N minutes."""
+        """
+        Background loop to broadcast /positions on exact clock hours (e.g. 12:00, 13:00, 14:00).
+        Calculates sleep duration dynamically to align to the exact top-of-the-hour boundary.
+        """
         while self._running:
             try:
-                interval_sec = max(60, self.settings.AUTO_POSITIONS_INTERVAL_MINUTES * 60)
-                await asyncio.sleep(interval_sec)
+                interval_minutes = max(1, self.settings.AUTO_POSITIONS_INTERVAL_MINUTES)
+                interval_sec = interval_minutes * 60
+
+                # Compute remaining seconds until the next exact clock boundary
+                now = time.time()
+                sec_into_interval = int(now) % interval_sec
+                seconds_to_wait = interval_sec - sec_into_interval
+                if seconds_to_wait <= 0:
+                    seconds_to_wait = interval_sec
+
+                logger.debug(f"Auto-positions scheduler waiting {seconds_to_wait:.1f}s until next clock boundary.")
+                await asyncio.sleep(seconds_to_wait)
 
                 if self.settings.AUTO_POSITIONS_ENABLED and self._running:
                     await self.broadcast_positions_snapshot()
@@ -105,6 +118,7 @@ class NotificationService:
                 break
             except Exception as e:
                 logger.error(f"Error in auto positions broadcast loop: {e}")
+                await asyncio.sleep(10)
 
     async def broadcast_positions_snapshot(self) -> None:
         """Fetch current positions and broadcast formatted snapshot to whitelisted users."""

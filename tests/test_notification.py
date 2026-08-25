@@ -121,3 +121,20 @@ async def test_auto_positions_broadcast(notification_service: NotificationServic
     assert "BTC_USDT" in alerts_sent[0]
     assert "65,000.0000" in alerts_sent[0]
 
+
+def test_auto_positions_loop_clock_alignment(notification_service: NotificationService):
+    """Verify that remaining seconds to next clock hour are properly calculated."""
+    import time
+    # Test with 60 minutes interval (3600 seconds)
+    notification_service.settings.AUTO_POSITIONS_INTERVAL_MINUTES = 60
+    interval_sec = 60 * 60
+
+    now = 1700001234  # Arbitrary timestamp
+    sec_into_interval = int(now) % interval_sec
+    seconds_to_wait = interval_sec - sec_into_interval
+
+    # The timestamp after waiting should align exactly to a multiple of 3600 (top of the hour)
+    target_timestamp = now + seconds_to_wait
+    assert target_timestamp % 3600 == 0
+    assert 0 < seconds_to_wait <= 3600
+

@@ -170,12 +170,12 @@ async def handle_autopos(
     args = context.args or []
     if not args:
         status_str = "ENABLED" if settings.AUTO_POSITIONS_ENABLED else "DISABLED"
-        interval_str = f"{settings.AUTO_POSITIONS_INTERVAL_MINUTES} minutes" if settings.AUTO_POSITIONS_INTERVAL_MINUTES != 60 else "1 hour (60m)"
+        interval_str = f"Every 1 hour on the clock (e.g. 12:00, 13:00, 14:00, 15:00)" if settings.AUTO_POSITIONS_INTERVAL_MINUTES == 60 else f"Every {settings.AUTO_POSITIONS_INTERVAL_MINUTES} minutes (clock-aligned)"
         await update.effective_message.reply_text(
             f"⏰ *AUTOMATED HOURLY POSITIONS SCHEDULE*\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"• *Status:* `{status_str}`\n"
-            f"• *Interval:* `{interval_str}`\n"
+            f"• *Schedule:* `{interval_str}`\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"• Enable: `/autopos on`\n"
             f"• Disable: `/autopos off`\n"
