@@ -198,6 +198,7 @@ async def handle_open(
         "current_price": current_price,
         "sl_price": sl_price,
         "tp_price": tp_price,
+        "open_type": 2,  # 2: Cross Margin (default)
         "is_dry_run": settings.DRY_RUN,
     }
     token = await pending_manager.store_action(action_data)
@@ -214,6 +215,7 @@ async def handle_open(
         sl_price=sl_price,
         tp_price=tp_price,
         is_dry_run=settings.DRY_RUN,
+        margin_mode="Cross",
     )
 
     keyboard = InlineKeyboardMarkup([
@@ -611,15 +613,16 @@ async def handle_trade_callback(
 
     try:
         if act == "OPEN":
-            # 1. Set leverage
+            # 1. Set leverage and margin mode to Cross (open_type=2)
             leverage = action["leverage"]
             pos_type = 1 if action["side_is_long"] else 2
+            open_type = action.get("open_type", 2)  # 2: Cross Margin
             try:
-                await client.set_leverage(symbol, leverage, pos_type)
+                await client.set_leverage(symbol, leverage, pos_type, open_type=open_type)
             except Exception as e:
                 logger.warning(f"Could not update leverage: {e}")
 
-            # 2. Submit order
+            # 2. Submit order with open_type (Cross = 2)
             side_code = 1 if action["side_is_long"] else 3
             res = await client.submit_order(
                 symbol=symbol,
@@ -628,6 +631,7 @@ async def handle_trade_callback(
                 leverage=leverage,
                 order_type=action["order_type"],
                 price=action["price"],
+                open_type=open_type,
                 stop_loss_price=action.get("sl_price"),
                 take_profit_price=action.get("tp_price"),
             )

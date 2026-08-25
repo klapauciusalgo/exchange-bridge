@@ -295,15 +295,22 @@ class MexcClient:
         data = await self._request("GET", "/api/v1/private/order/list/history_orders", params=params, is_private=True)
         return data if isinstance(data, list) else []
 
-    async def set_leverage(self, symbol: str, leverage: int, position_type: int = 1) -> dict:
-        """Change leverage for a symbol (position_type: 1=Long, 2=Short)."""
+    async def set_leverage(
+        self,
+        symbol: str,
+        leverage: int,
+        position_type: int = 1,
+        open_type: int = 2,  # 2: Cross (default), 1: Isolated
+    ) -> dict:
+        """Change leverage and margin mode for a symbol (open_type: 2=Cross, 1=Isolated; position_type: 1=Long, 2=Short)."""
         sym = self.normalize_symbol(symbol)
         if self.dry_run:
-            return {"symbol": sym, "leverage": leverage, "positionType": position_type}
+            return {"symbol": sym, "leverage": leverage, "positionType": position_type, "openType": open_type}
         payload = {
             "symbol": sym,
             "leverage": leverage,
-            "positionType": position_type
+            "positionType": position_type,
+            "openType": open_type,
         }
         return await self._request("POST", "/api/v1/private/position/change_leverage", data=payload, is_private=True)
 
@@ -315,7 +322,7 @@ class MexcClient:
         leverage: int,
         order_type: int = 5,  # 1: Limit, 5: Market
         price: float = 0.0,
-        open_type: int = 1,  # 1: Isolated, 2: Cross
+        open_type: int = 2,  # 2: Cross (default), 1: Isolated
         stop_loss_price: Optional[float] = None,
         take_profit_price: Optional[float] = None,
     ) -> dict:
@@ -404,7 +411,7 @@ class MexcClient:
         leverage: int = 1,
         trigger_type: int = 1,  # 1: Mark Price, 3: Latest Price
         order_type: int = 2,  # 2: Market Plan Order
-        open_type: int = 1,
+        open_type: int = 2,  # 2: Cross (default), 1: Isolated
     ) -> dict:
         """Place a Stop Loss or Take Profit trigger plan order."""
         sym = self.normalize_symbol(symbol)

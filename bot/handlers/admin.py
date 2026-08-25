@@ -17,8 +17,8 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
     """Create persistent bottom button dashboard."""
     keyboard = [
         [KeyboardButton("📊 Positions"), KeyboardButton("💰 Balance")],
-        [KeyboardButton("📋 Orders"), KeyboardButton("📈 Chart BTC")],
-        [KeyboardButton("⏰ Auto Positions"), KeyboardButton("🎯 Watchlist")],
+        [KeyboardButton("🔍 Scan 4H"), KeyboardButton("📈 Chart BTC")],
+        [KeyboardButton("📋 Orders"), KeyboardButton("🎯 Watchlist")],
         [KeyboardButton("🛡️ Risk Limits"), KeyboardButton("❓ Help")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

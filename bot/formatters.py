@@ -198,8 +198,11 @@ def format_positions(
         sl_str = f"${sl_val:,.4f}" if sl_val is not None and sl_val > 0 else "None"
         tp_str = f"${tp_val:,.4f}" if tp_val is not None and tp_val > 0 else "None"
 
+        open_type = pos.get("openType", 2)
+        margin_mode = "Cross" if open_type == 2 else "Isolated"
+
         cards.extend([
-            f"*{symbol}* │ {side_str} `{leverage}x`",
+            f"*{symbol}* │ {side_str} `{leverage}x` ({margin_mode})",
             f"• *Size:* `${size_usdt:,.2f} USDT` (Margin: `${margin:,.2f}`)",
             f"• *Entry:* `${entry_price:,.4f}`" + (f" │ *Mark:* `${mark_price:,.4f}`" if mark_price > 0 else ""),
             f"• *PnL:* {pnl_sign}`${pnl:,.2f}` (`{pnl_pct:+.2f}%`)",
@@ -263,6 +266,7 @@ def format_order_preview(
     sl_price: Optional[float] = None,
     tp_price: Optional[float] = None,
     is_dry_run: bool = False,
+    margin_mode: str = "Cross",
 ) -> str:
     """Format detailed pre-trade confirmation summary."""
     mode_badge = "🧪 *[DRY RUN / SIMULATION]*\n" if is_dry_run else ""
@@ -272,7 +276,7 @@ def format_order_preview(
         f"{mode_badge}⚠️ *TRADE CONFIRMATION REQUIRED*",
         "━━━━━━━━━━━━━━━━━━━━",
         f"• *Symbol:* `{symbol}`",
-        f"• *Action:* *{side_str.upper()}* (`{leverage}x` Leverage)",
+        f"• *Action:* *{side_str.upper()}* (`{leverage}x` Leverage │ 🌐 `{margin_mode}`)",
         f"• *Order Type:* `{order_type_str.upper()}`" + (f" @ `${price:,.4f}`" if price > 0 else " (Market)"),
         f"• *Position Value:* `${size_usdt:,.2f} USDT`",
         f"• *Required Margin:* `${vr.estimated_margin:,.2f} USDT` (`{vr.margin_ratio_pct:.1f}%` of Equity)",
@@ -315,6 +319,7 @@ def format_help() -> str:
         "• `/cancel <order_id>` — Cancel specific order\n"
         "• `/panic` or `/closeall` — 🚨 Emergency kill switch (closes all & cancels all)\n\n"
         "*Alerts & Watchlist:*\n"
+        "• `/scan4h` — 🔍 Scan 4H markets for Long/Short setups\n"
         "• `/watch <symbol> <above|below> <price>` — Set price alert\n"
         "• `/watchlist` — View active price alerts\n"
         "• `/unwatch <id>` — Remove alert\n\n"
@@ -351,4 +356,56 @@ def format_watchlist(alerts: List[WatchlistAlert]) -> str:
     for a in alerts:
         lines.append(f"• `#{a.id}` │ *{a.symbol}* {a.condition} `${a.target_price:,.4f}`")
     lines.append("\nTo remove an alert: `/unwatch <id>`")
+    return "\n".join(lines)
+
+
+def format_scan_results(data: dict, timeframe: str = "4H") -> str:
+    """Format market scanner results into a readable card."""
+    longs = data.get("longs", [])
+    shorts = data.get("shorts", [])
+    total_scanned = data.get("total_scanned", 0)
+
+    lines = [
+        f"🔍 *MEXC {timeframe} MARKET SCANNER*",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"📊 *Criteria:* RSI(14) & Funding Rate Filters",
+        f"• Total Pairs Scanned: `{total_scanned}`",
+        "━━━━━━━━━━━━━━━━━━━━",
+    ]
+
+    # Long Section
+    lines.append("🟢 *LONG SETUPS (RSI > 55 │ 0.001% ≤ FR ≤ 0.01%)*")
+    if longs:
+        for x in longs[:8]:
+            sym = x["symbol"]
+            rsi = x["rsi"]
+            fr = x["funding_pct"]
+            price = x["price"]
+            vol_m = x["vol24"] / 1e6
+            chg = x["change24"]
+            lines.append(f"• *{sym}* │ `${price:,.4f}` ({chg:+.2f}%)")
+            lines.append(f"   RSI: `{rsi:.1f}` │ FR: `{fr:+.4f}%` │ Vol: `${vol_m:.1f}M`")
+    else:
+        lines.append("  _No Long candidates matching criteria currently._")
+
+    lines.append("────────────────────")
+
+    # Short Section
+    lines.append("🔴 *SHORT SETUPS (RSI < 45 │ FR > 0.1% or FR < 0%)*")
+    if shorts:
+        for x in shorts[:8]:
+            sym = x["symbol"]
+            rsi = x["rsi"]
+            fr = x["funding_pct"]
+            price = x["price"]
+            vol_m = x["vol24"] / 1e6
+            chg = x["change24"]
+            lines.append(f"• *{sym}* │ `${price:,.4f}` ({chg:+.2f}%)")
+            lines.append(f"   RSI: `{rsi:.1f}` │ FR: `{fr:+.4f}%` │ Vol: `${vol_m:.1f}M`")
+    else:
+        lines.append("  _No Short candidates matching criteria currently._")
+
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("💡 _Use `/open <sym> <long|short> <size> <lev>` to execute._")
+
     return "\n".join(lines)

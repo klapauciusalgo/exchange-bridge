@@ -1,13 +1,14 @@
 """Market data, price lookup, orderbook, watchlist, and chart handlers."""
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from database.db import Database
 from database.models import WatchlistAlert
 from exchange.mexc_client import MexcClient
-from bot.formatters import format_ticker, format_market, format_orderbook, format_watchlist
+from bot.formatters import format_ticker, format_market, format_orderbook, format_watchlist, format_scan_results
 from services.chart_generator import generate_candlestick_chart
+from services.market_scanner import MarketScanner
 
 logger = logging.getLogger(__name__)
 
@@ -213,3 +214,47 @@ async def handle_unwatch(update: Update, context: ContextTypes.DEFAULT_TYPE, db:
         await update.effective_message.reply_text(f"✅ Alert `#{alert_id}` removed.", parse_mode="Markdown")
     else:
         await update.effective_message.reply_text(f"❌ Alert `#{alert_id}` not found or already deleted.", parse_mode="Markdown")
+
+
+async def handle_scan4h(update: Update, context: ContextTypes.DEFAULT_TYPE, client: MexcClient) -> None:
+    """
+    Handle /scan4h [long|short]
+    Scans all MEXC futures pairs for 4H RSI and Funding Rate trading setups.
+    """
+    status_msg = await update.effective_message.reply_text(
+        "🔍 *Scanning MEXC 4H Futures markets for Long/Short setups...*\n_Analyzing RSI(14) and funding rates across all pairs._",
+        parse_mode="Markdown"
+    )
+
+    side_filter: Optional[str] = None
+    if context.args:
+        arg = context.args[0].strip().upper()
+        if arg in ["LONG", "BUY"]:
+            side_filter = "LONG"
+        elif arg in ["SHORT", "SELL"]:
+            side_filter = "SHORT"
+
+    try:
+        scanner = MarketScanner(client)
+        data = await scanner.scan_4h(side_filter=side_filter)
+        card_text = format_scan_results(data, timeframe="4H")
+
+        # Quick navigation buttons for top signals
+        buttons = []
+        top_long = data["longs"][0]["symbol"].replace("_USDT", "") if data.get("longs") else None
+        top_short = data["shorts"][0]["symbol"].replace("_USDT", "") if data.get("shorts") else None
+
+        row = []
+        if top_long:
+            row.append(InlineKeyboardButton(f"📈 Chart {top_long}", callback_data=f"nav:chart_{top_long}"))
+        if top_short:
+            row.append(InlineKeyboardButton(f"📉 Chart {top_short}", callback_data=f"nav:chart_{top_short}"))
+        if row:
+            buttons.append(row)
+        buttons.append([InlineKeyboardButton("🔄 Rescan 4H", callback_data="nav:scan4h")])
+
+        keyboard = InlineKeyboardMarkup(buttons)
+        await status_msg.edit_text(card_text, reply_markup=keyboard, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error executing 4h scan: {e}")
+        await status_msg.edit_text(f"❌ *Scanner Error:* `{e}`", parse_mode="Markdown")
