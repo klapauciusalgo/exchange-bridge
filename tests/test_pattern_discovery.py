@@ -10,10 +10,38 @@ from services.pattern_discovery import (
     compute_bb_width,
     compute_volume_ratio,
     normalize_series,
+    is_excluded_symbol,
 )
 from exchange.mexc_client import MexcClient
 from bot.handlers.market import handle_similar
 from bot.formatters import format_similar_recommendations
+
+
+def test_is_excluded_symbol():
+    """Verify that %STOCK_USDT, indices, commodities, and stablecoins are excluded."""
+    # Stocks (%STOCK_USDT)
+    assert is_excluded_symbol("AAPLSTOCK_USDT") is True
+    assert is_excluded_symbol("TSLASTOCK_USDT") is True
+    assert is_excluded_symbol("NVDASTOCK_USDT") is True
+    assert is_excluded_symbol("NVIDIA_USDT") is True
+
+    # Indices & ETFs
+    assert is_excluded_symbol("SPX500_USDT") is True
+    assert is_excluded_symbol("NAS100_USDT") is True
+    assert is_excluded_symbol("SPY_USDT") is True
+    assert is_excluded_symbol("SOXL_USDT") is True
+
+    # Commodities & Forex & Stablecoins
+    assert is_excluded_symbol("UKOIL_USDT") is True
+    assert is_excluded_symbol("XAU_USDT") is True
+    assert is_excluded_symbol("USDC_USDT") is True
+
+    # Real Crypto Pairs should NOT be excluded
+    assert is_excluded_symbol("BTC_USDT") is False
+    assert is_excluded_symbol("ETH_USDT") is False
+    assert is_excluded_symbol("SOL_USDT") is False
+    assert is_excluded_symbol("SUI_USDT") is False
+    assert is_excluded_symbol("XPL_USDT") is False
 
 
 def test_feature_engineering_helpers():

@@ -14,14 +14,31 @@ from exchange.mexc_client import MexcClient
 logger = logging.getLogger(__name__)
 
 # Excluded non-crypto, equities, commodities, and stablecoin assets
-EXCLUDED_SYMBOLS = {
+EXCLUDED_NON_CRYPTO = {
+    # Indices & Equities
+    "SPX500_USDT", "SPX_USDT", "NAS100_USDT", "US30_USDT", "US500_USDT",
+    "US100_USDT", "HK50_USDT", "JP225_USDT", "GER40_USDT", "UK100_USDT",
+    "SPY_USDT", "QQQ_USDT", "SOXL_USDT", "SOXS_USDT", "SQQQ_USDT",
+    "TQQQ_USDT", "UVXY_USDT", "NVIDIA_USDT", "COINBASE_USDT",
+    # Commodities & Precious Metals
+    "UKOIL_USDT", "USOIL_USDT", "OIL_USDT", "NATGAS_USDT", "COPPER_USDT",
+    "SILVER_USDT", "XAU_USDT", "XAG_USDT", "XAUT_USDT", "GOLD_USDT",
+    # Stablecoins & Forex
     "USDC_USDT", "FDUSD_USDT", "TUSD_USDT", "BUSD_USDT", "DAI_USDT",
-    "USDE_USDT", "EUR_USDT", "GBP_USDT", "XAU_USDT", "XAG_USDT",
-    "SPX500_USDT", "NAS100_USDT", "NVIDIA_USDT", "SPY_USDT", "SOXL_USDT",
-    "QQQ_USDT", "TSLA_USDT", "AAPL_USDT", "MSFT_USDT", "AMZN_USDT",
-    "GOOGL_USDT", "META_USDT", "AMD_USDT", "COIN_USDT", "MSTR_USDT",
-    "DJI_USDT", "UKOIL_USDT", "USOIL_USDT", "COPPER_USDT",
+    "USDE_USDT", "EUR_USDT", "GBP_USDT", "JPY_USDT", "AUD_USDT",
+    "CAD_USDT", "CHF_USDT",
 }
+
+
+def is_excluded_symbol(symbol: str) -> bool:
+    """
+    Check if a symbol is a stock (%STOCK_USDT), index, commodity, forex, or stablecoin perp
+    to ensure only real crypto assets are analyzed.
+    """
+    s = symbol.strip().upper()
+    if "STOCK" in s:
+        return True
+    return s in EXCLUDED_NON_CRYPTO
 
 
 def compute_rsi(prices: List[float], period: int = 14) -> float:
@@ -183,7 +200,7 @@ class PatternDiscoveryEngine:
         candidate_pool: List[dict] = []
         for t in tickers:
             sym = t.get("symbol", "")
-            if not sym.endswith("_USDT") or sym == norm_target or sym in EXCLUDED_SYMBOLS:
+            if not sym.endswith("_USDT") or sym == norm_target or is_excluded_symbol(sym):
                 continue
 
             vol24 = float(t.get("amount24", t.get("volume24", 0.0)))

@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Dict, List, Optional, Tuple
 from exchange.mexc_client import MexcClient
+from services.pattern_discovery import is_excluded_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class MarketScanner:
 
         for t in tickers:
             sym = t.get("symbol", "")
-            if not sym.endswith("_USDT"):
+            if not sym.endswith("_USDT") or is_excluded_symbol(sym):
                 continue
 
             vol24 = float(t.get("amount24", t.get("volume24", 0.0)))
