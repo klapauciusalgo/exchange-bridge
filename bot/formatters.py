@@ -422,10 +422,10 @@ def format_similar_recommendations(data: dict) -> str:
     candidates = data.get("top_candidates", [])
 
     lines = [
-        f"🎯 *PATTERN DISCOVERY: SIMILAR SETUPS*",
+        "🎯 *PATTERN DISCOVERY: SIMILAR SETUPS*",
         "━━━━━━━━━━━━━━━━━━━━",
         f"📌 *Reference Asset:* `{target}` ({tf})",
-        f"• *State:* _{status}_",
+        f"• *State:* {status}",
         f"• *Ref RSI:* `{target_rsi:.1f}` │ *Ref BB Width:* `{target_bb:.2f}%`",
         "━━━━━━━━━━━━━━━━━━━━",
         "🔮 *TOP 5 SIMILAR PRE-MOVE CANDIDATES:*",
@@ -433,7 +433,7 @@ def format_similar_recommendations(data: dict) -> str:
     ]
 
     if not candidates:
-        lines.append("_No qualifying pre-move setups found matching criteria._")
+        lines.append("📭 _No qualifying pre-move setups found matching criteria._")
     else:
         medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
         for idx, c in enumerate(candidates):
@@ -449,10 +449,10 @@ def format_similar_recommendations(data: dict) -> str:
             bb = c["bb_width"]
             reasons_str = ", ".join(c.get("reasons", ["Matching structure"]))
 
-            lines.append(f"{badge} *{sym}* │ `${price:,.4f}` ({chg:+.2f}%)")
+            lines.append(f"{badge} `{sym}` │ `${price:,.4f}` ({chg:+.2f}%)")
             lines.append(f"   • *Similarity:* `{sim:.1f}%` │ *Score:* `{score:.1f}/100` ({conf})")
             lines.append(f"   • *RSI:* `{rsi:.1f}` │ *BB Width:* `{bb:.2f}%` │ *24h Vol:* `${vol_m:.1f}M`")
-            lines.append(f"   • _Why:_ {reasons_str}")
+            lines.append(f"   • *Why:* {reasons_str}")
             lines.append("────────────────────")
 
     lines.append("💡 _Objective: Find the next setup, not the next pump._")

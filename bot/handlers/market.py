@@ -313,7 +313,15 @@ async def handle_similar(update: Update, context: ContextTypes.DEFAULT_TYPE, cli
         buttons.append([InlineKeyboardButton(f"🔄 Rescan Similar to {symbol}", callback_data=f"nav:similar_{symbol}_{timeframe}")])
         keyboard = InlineKeyboardMarkup(buttons)
 
-        await status_msg.edit_text(card_text, reply_markup=keyboard, parse_mode="Markdown")
+        try:
+            await status_msg.edit_text(card_text, reply_markup=keyboard, parse_mode="Markdown")
+        except Exception as md_err:
+            logger.warning(f"Markdown edit failed: {md_err}, falling back to plain text")
+            await status_msg.edit_text(card_text, reply_markup=keyboard)
     except Exception as e:
         logger.error(f"Error in handle_similar for {symbol}: {e}", exc_info=True)
-        await status_msg.edit_text(f"❌ *Pattern Discovery Error:* `{e}`", parse_mode="Markdown")
+        err_msg = f"❌ Pattern Discovery Error: {e}"
+        try:
+            await status_msg.edit_text(err_msg, parse_mode="Markdown")
+        except Exception:
+            await status_msg.edit_text(err_msg)
