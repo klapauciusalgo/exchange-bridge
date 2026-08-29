@@ -416,19 +416,33 @@ def format_similar_recommendations(data: dict) -> str:
     """Format CPDE similar pattern recommendations into a readable Telegram card."""
     target = data.get("target_symbol", "N/A")
     tf = data.get("timeframe", "4H")
+    direction = data.get("direction", "NEUTRAL")
     status = data.get("pre_move_status", "Reference State")
     target_rsi = data.get("target_rsi", 50.0)
     target_bb = data.get("target_bb_width", 5.0)
     candidates = data.get("top_candidates", [])
 
+    if direction == "SHORT":
+        title_str = "🎯 *PATTERN DISCOVERY: BEARISH PRE-BREAKDOWN (SHORT)*"
+        sub_str = "🔮 *TOP 5 SIMILAR PRE-BREAKDOWN CANDIDATES (SHORT):*"
+        obj_str = "💡 _Objective: Find the next breakdown setup, not the drop already happened._"
+    elif direction == "LONG":
+        title_str = "🎯 *PATTERN DISCOVERY: BULLISH PRE-BREAKOUT (LONG)*"
+        sub_str = "🔮 *TOP 5 SIMILAR PRE-BREAKOUT CANDIDATES (LONG):*"
+        obj_str = "💡 _Objective: Find the next setup, not the pump already happened._"
+    else:
+        title_str = "🎯 *PATTERN DISCOVERY: SIMILAR SETUPS*"
+        sub_str = "🔮 *TOP 5 SIMILAR CANDIDATES:*"
+        obj_str = "💡 _Objective: Statistical market pattern discovery._"
+
     lines = [
-        "🎯 *PATTERN DISCOVERY: SIMILAR SETUPS*",
+        title_str,
         "━━━━━━━━━━━━━━━━━━━━",
-        f"📌 *Reference Asset:* `{target}` ({tf})",
+        f"📌 *Reference Asset:* `{target}` ({tf}) │ Bias: `{direction}`",
         f"• *State:* {status}",
         f"• *Ref RSI:* `{target_rsi:.1f}` │ *Ref BB Width:* `{target_bb:.2f}%`",
         "━━━━━━━━━━━━━━━━━━━━",
-        "🔮 *TOP 5 SIMILAR PRE-MOVE CANDIDATES:*",
+        sub_str,
         "",
     ]
 
@@ -455,5 +469,5 @@ def format_similar_recommendations(data: dict) -> str:
             lines.append(f"   • *Why:* {reasons_str}")
             lines.append("────────────────────")
 
-    lines.append("💡 _Objective: Find the next setup, not the next pump._")
+    lines.append(obj_str)
     return "\n".join(lines)

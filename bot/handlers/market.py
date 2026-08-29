@@ -282,22 +282,25 @@ async def handle_similar(update: Update, context: ContextTypes.DEFAULT_TYPE, cli
 
     symbol = args[0].strip().upper()
     timeframe = "4h"
-    if len(args) >= 2:
-        raw_tf = args[1].strip().lower()
-        if raw_tf in ["30m", "4h", "1d", "1h", "15m", "5m"]:
-            timeframe = raw_tf
-        else:
-            timeframe = raw_tf
+    direction = None
 
+    for a in args[1:]:
+        a_clean = a.strip().lower()
+        if a_clean in ["30m", "4h", "1d", "1h", "15m", "5m"]:
+            timeframe = a_clean
+        elif a_clean in ["long", "short", "up", "down", "bull", "bear"]:
+            direction = "SHORT" if a_clean in ["short", "down", "bear"] else "LONG"
+
+    dir_label = f" ({direction})" if direction else ""
     status_msg = await update.effective_message.reply_text(
-        f"🔍 *Analyzing `{symbol}` pre-move state on {timeframe.upper()}...*\n"
+        f"🔍 *Analyzing `{symbol}` pre-move state on {timeframe.upper()}{dir_label}...*\n"
         f"_Scanning MEXC Futures universe for top 5 statistically similar setups._",
         parse_mode="Markdown"
     )
 
     try:
         engine = PatternDiscoveryEngine(client)
-        data = await engine.find_similar_setups(target_symbol=symbol, timeframe=timeframe)
+        data = await engine.find_similar_setups(target_symbol=symbol, timeframe=timeframe, direction=direction)
         card_text = format_similar_recommendations(data)
 
         # Dynamic inline buttons for top recommendations

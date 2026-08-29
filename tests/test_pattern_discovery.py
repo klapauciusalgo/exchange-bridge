@@ -61,9 +61,9 @@ def test_feature_engineering_helpers():
     assert vr > 1.8
 
 
-def test_detect_pre_move_window_pump_detection():
-    """Verify that pump starting point is detected and pre-move window is isolated."""
-    # 25 candles of baseline consolidation around 100.0, then pump to 130.0 in last 5 candles
+def test_detect_pre_move_window_pump_and_dump():
+    """Verify that both pump (LONG) and dump (SHORT) pre-move windows are detected."""
+    # 1. Pump setup
     baseline = [100.0 + (i % 2) * 0.5 for i in range(30)]
     pump = [105.0, 112.0, 120.0, 128.0, 130.0]
     closes = baseline + pump
@@ -71,13 +71,29 @@ def test_detect_pre_move_window_pump_detection():
     lows = [c - 1.0 for c in closes]
     vols = [1000.0] * len(closes)
 
-    anchor_idx, status, move_pct, p0, p1 = PatternDiscoveryEngine.detect_pre_move_window(
+    anchor_idx, status, move_pct, p0, p1, direction = PatternDiscoveryEngine.detect_pre_move_window(
         closes, highs, lows, vols, lookback=25
     )
 
     assert move_pct >= 20.0
     assert anchor_idx <= len(closes) - 5
+    assert direction == "LONG"
     assert "Base" in status
+
+    # 2. Dump setup
+    dump = [95.0, 90.0, 85.0, 80.0, 75.0]
+    dump_closes = baseline + dump
+    d_highs = [c + 1.0 for c in dump_closes]
+    d_lows = [c - 1.0 for c in dump_closes]
+    d_vols = [1000.0] * len(dump_closes)
+
+    d_anchor, d_status, d_move, d_p0, d_p1, d_dir = PatternDiscoveryEngine.detect_pre_move_window(
+        dump_closes, d_highs, d_lows, d_vols, lookback=25
+    )
+
+    assert d_move <= -20.0
+    assert d_dir == "SHORT"
+    assert "Breakdown" in d_status or "Top" in d_status
 
 
 @pytest.mark.asyncio

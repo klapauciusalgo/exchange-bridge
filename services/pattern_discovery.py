@@ -1,7 +1,7 @@
 """Crypto Historical Pattern Discovery & Recommendation Engine (CPDE).
 
 Identifies crypto assets with a current market state that is statistically and technically
-similar to the pre-breakout / pre-move state of a target reference asset.
+similar to the pre-breakout (LONG) or pre-breakdown (SHORT) state of a target reference asset.
 """
 import asyncio
 import logging
@@ -98,7 +98,7 @@ def normalize_series(prices: List[float]) -> np.ndarray:
 class PatternDiscoveryEngine:
     """
     Finds assets currently in a market state matching the pre-move structure
-    of a reference asset.
+    (pre-breakout LONG or pre-breakdown SHORT) of a reference asset.
     """
 
     def __init__(self, mexc_client: MexcClient):
@@ -111,57 +111,99 @@ class PatternDiscoveryEngine:
         lows: List[float],
         volumes: List[float],
         lookback: int = 25,
-    ) -> Tuple[int, str, float, float, float]:
+        direction_hint: Optional[str] = None,
+    ) -> Tuple[int, str, float, float, float, str]:
         """
-        Detects where a recent significant price acceleration / swing began,
+        Detects where a recent significant price acceleration (pump) or breakdown (dump) began,
         and returns the end index of the pre-move consolidation window.
 
         Returns:
-            (anchor_end_idx, status_description, move_magnitude_pct, trough_price, peak_price)
+            (anchor_end_idx, status_description, move_magnitude_pct, start_price, end_price, direction)
         """
         n = len(closes)
         if n < lookback + 5:
-            return n, "Current Consolidation Base", 0.0, closes[-1] if closes else 0.0, closes[-1] if closes else 0.0
+            return n, "Current Consolidation State", 0.0, closes[-1] if closes else 0.0, closes[-1] if closes else 0.0, "NEUTRAL"
 
-        # Examine the last 15 candles for explosive upward move
         recent_window = min(15, n - lookback)
         search_start = n - recent_window
 
-        # Peak in recent candles
+        # 1. Peak & Trough in recent window
         peak_offset = int(np.argmax(closes[search_start:]))
         peak_idx = search_start + peak_offset
         peak_price = closes[peak_idx]
 
-        # Find the trough right before the peak (search backwards from peak)
-        trough_idx = peak_idx
-        for i in range(peak_idx - 1, max(lookback - 1, peak_idx - 15), -1):
-            if closes[i] <= closes[trough_idx]:
-                trough_idx = i
-
+        trough_offset = int(np.argmin(closes[search_start:]))
+        trough_idx = search_start + trough_offset
         trough_price = closes[trough_idx]
-        move_pct = ((peak_price - trough_price) / trough_price) * 100.0 if trough_price > 0 else 0.0
 
-        if move_pct >= 5.0 and trough_idx >= lookback:
-            candles_ago = n - trough_idx
-            if move_pct >= 10.0:
-                status_desc = f"Breakout Base ({candles_ago} candles ago: ${trough_price:,.4f} ➔ ${peak_price:,.4f}, +{move_pct:.1f}%)"
+        # 2. Measure potential upward move (trough before peak)
+        t_before_p = peak_idx
+        for i in range(peak_idx - 1, max(lookback - 1, peak_idx - 15), -1):
+            if closes[i] <= closes[t_before_p]:
+                t_before_p = i
+        p_trough_base = closes[t_before_p]
+        up_move_pct = ((peak_price - p_trough_base) / p_trough_base) * 100.0 if p_trough_base > 0 else 0.0
+
+        # 3. Measure potential downward move (peak before trough)
+        p_before_t = trough_idx
+        for i in range(trough_idx - 1, max(lookback - 1, trough_idx - 15), -1):
+            if closes[i] >= closes[p_before_t]:
+                p_before_t = i
+        p_peak_top = closes[p_before_t]
+        down_move_pct = ((trough_price - p_peak_top) / p_peak_top) * 100.0 if p_peak_top > 0 else 0.0
+
+        # 4. Resolve Direction (Hint or Auto-detection)
+        hint_clean = (direction_hint or "").strip().upper()
+        if hint_clean in ["SHORT", "DOWN", "BEAR", "BEARISH"]:
+            target_dir = "SHORT"
+        elif hint_clean in ["LONG", "UP", "BULL", "BULLISH"]:
+            target_dir = "LONG"
+        else:
+            if abs(down_move_pct) > up_move_pct and abs(down_move_pct) >= 5.0:
+                target_dir = "SHORT"
+            elif up_move_pct >= 5.0:
+                target_dir = "LONG"
             else:
-                status_desc = f"Intraday Swing Base ({candles_ago} candles ago: ${trough_price:,.4f} ➔ ${peak_price:,.4f}, +{move_pct:.1f}%)"
-            return trough_idx, status_desc, move_pct, trough_price, peak_price
+                target_dir = "NEUTRAL"
 
-        return n, "Current Consolidation Base", move_pct, closes[-1], closes[-1]
+        # 5. Handle SHORT breakdown window
+        if target_dir == "SHORT" and p_before_t >= lookback:
+            candles_ago = n - p_before_t
+            drop_pct = abs(down_move_pct)
+            if drop_pct >= 10.0:
+                status_desc = f"Breakdown Top ({candles_ago} candles ago: ${p_peak_top:,.4f} ➔ ${trough_price:,.4f}, -{drop_pct:.1f}%)"
+            elif drop_pct >= 5.0:
+                status_desc = f"Intraday Drop Top ({candles_ago} candles ago: ${p_peak_top:,.4f} ➔ ${trough_price:,.4f}, -{drop_pct:.1f}%)"
+            else:
+                status_desc = "Top Resistance / Distribution Base"
+            return p_before_t, status_desc, -drop_pct, p_peak_top, trough_price, "SHORT"
+
+        # 6. Handle LONG breakout window
+        if target_dir == "LONG" and t_before_p >= lookback:
+            candles_ago = n - t_before_p
+            if up_move_pct >= 10.0:
+                status_desc = f"Breakout Base ({candles_ago} candles ago: ${p_trough_base:,.4f} ➔ ${peak_price:,.4f}, +{up_move_pct:.1f}%)"
+            elif up_move_pct >= 5.0:
+                status_desc = f"Intraday Swing Base ({candles_ago} candles ago: ${p_trough_base:,.4f} ➔ ${peak_price:,.4f}, +{up_move_pct:.1f}%)"
+            else:
+                status_desc = "Support / Consolidation Base"
+            return t_before_p, status_desc, up_move_pct, p_trough_base, peak_price, "LONG"
+
+        return n, "Current Consolidation State", 0.0, closes[-1], closes[-1], "NEUTRAL"
 
     async def find_similar_setups(
         self,
         target_symbol: str,
         timeframe: str = "4h",
+        direction: Optional[str] = None,
         lookback_candles: int = 25,
         max_results: int = 5,
-        max_candidate_24h_return: float = 8.0,  # Ensure candidate hasn't pumped yet
+        max_candidate_24h_return: float = 8.0,
         min_24h_volume: float = 200_000.0,
     ) -> Dict:
         """
         Search for top candidate assets currently resembling the reference asset's pre-move state.
+        Supports both LONG (bullish breakout) and SHORT (bearish breakdown) discovery.
         """
         norm_target = self.client.normalize_symbol(target_symbol)
 
@@ -180,8 +222,8 @@ class PatternDiscoveryEngine:
             raise ValueError(f"Could not load data for symbol `{target_symbol}`: {e}")
 
         # 2. Extract Pre-Move Reference Features
-        anchor_idx, pre_move_status, move_pct, trough_p, peak_p = self.detect_pre_move_window(
-            t_closes, t_highs, t_lows, t_vols, lookback=lookback_candles
+        anchor_idx, pre_move_status, move_pct, p0, p1, active_dir = self.detect_pre_move_window(
+            t_closes, t_highs, t_lows, t_vols, lookback=lookback_candles, direction_hint=direction
         )
 
         ref_closes_slice = t_closes[anchor_idx - lookback_candles : anchor_idx]
@@ -207,23 +249,31 @@ class PatternDiscoveryEngine:
             chg24 = float(t.get("riseFallRate", 0.0)) * 100.0
             price = float(t.get("lastPrice", 0.0))
 
-            # Must have minimum liquidity and must NOT have already pumped
-            if vol24 >= min_24h_volume and chg24 <= max_candidate_24h_return and price > 0:
-                candidate_pool.append({
-                    "symbol": sym,
-                    "vol24": vol24,
-                    "chg24": chg24,
-                    "price": price,
-                    "funding_rate": float(t.get("fundingRate", 0.0)) * 100.0,
-                })
+            if vol24 < min_24h_volume or price <= 0:
+                continue
 
-        # Sort candidate pool by 24h volume and limit to top 40 for fast parallel fetch
+            # Direction-aware candidate filtering:
+            # - LONG / NEUTRAL setup: candidate must NOT have already pumped (chg24 <= +8.0%)
+            # - SHORT setup: candidate must NOT have already dumped (chg24 >= -8.0%)
+            if active_dir in ["LONG", "NEUTRAL"] and chg24 > max_candidate_24h_return:
+                continue
+            elif active_dir == "SHORT" and chg24 < -max_candidate_24h_return:
+                continue
+
+            candidate_pool.append({
+                "symbol": sym,
+                "vol24": vol24,
+                "chg24": chg24,
+                "price": price,
+                "funding_rate": float(t.get("fundingRate", 0.0)) * 100.0,
+            })
+
+        # Sort candidate pool by 24h volume and limit to top 45 for fast parallel fetch
         candidate_pool.sort(key=lambda x: x["vol24"], reverse=True)
         eval_pool = candidate_pool[:45]
 
         # 4. Fetch Kline & Calculate Similarity Concurrently
         now = int(time.time())
-        # Calculate start timestamp for lookback slice
         tf_seconds = {
             "30m": 30 * 60,
             "1h": 3600,
@@ -279,7 +329,7 @@ class PatternDiscoveryEngine:
                         0.15 * volume_sim
                     )
 
-                    # Recommendation Score (Quality + Statistical edge)
+                    # Recommendation Score
                     rec_score = (
                         0.55 * total_similarity +
                         0.25 * rsi_sim +
@@ -298,11 +348,17 @@ class PatternDiscoveryEngine:
                     # Explainability points
                     reasons = []
                     if price_sim >= 85:
-                        reasons.append("Matching base consolidation curve")
+                        if active_dir == "SHORT":
+                            reasons.append("Matching top distribution curve")
+                        else:
+                            reasons.append("Matching base consolidation curve")
                     if rsi_diff <= 6:
                         reasons.append(f"RSI aligned ({cand_rsi:.1f} vs {ref_rsi:.1f})")
                     if bb_diff <= 3.0:
-                        reasons.append("Volatility squeeze / compression match")
+                        if active_dir == "SHORT":
+                            reasons.append("Volatility squeeze / breakdown potential")
+                        else:
+                            reasons.append("Volatility squeeze / compression match")
                     if not reasons:
                         reasons.append("Correlated price action structure")
 
@@ -334,6 +390,7 @@ class PatternDiscoveryEngine:
         return {
             "target_symbol": norm_target,
             "timeframe": timeframe.upper(),
+            "direction": active_dir,
             "pre_move_status": pre_move_status,
             "target_rsi": round(ref_rsi, 1),
             "target_bb_width": round(ref_bb_width, 2),
