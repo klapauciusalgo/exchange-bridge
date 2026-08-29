@@ -30,6 +30,7 @@ from bot.handlers import (
     handle_orderbook,
     handle_chart,
     handle_scan4h,
+    handle_similar,
     handle_watch,
     handle_watchlist,
     handle_unwatch,
@@ -123,6 +124,11 @@ def create_bot_app(
     app.add_handler(CommandHandler("scan4h", restricted(settings, security_manager, db)(_scan4h)))
     app.add_handler(CommandHandler("scan", restricted(settings, security_manager, db)(_scan4h)))
 
+    async def _similar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await handle_similar(update, context, mexc_client)
+    app.add_handler(CommandHandler("similar", restricted(settings, security_manager, db)(_similar)))
+    app.add_handler(CommandHandler("sim", restricted(settings, security_manager, db)(_similar)))
+
     async def _watch(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_watch(update, context, mexc_client, db)
     app.add_handler(CommandHandler("watch", restricted(settings, security_manager, db)(_watch)))
@@ -192,9 +198,17 @@ def create_bot_app(
             await handle_orders(update, context, mexc_client)
         elif data == "nav:scan4h":
             await handle_scan4h(update, context, mexc_client)
+        elif data.startswith("nav:similar_"):
+            parts = data.replace("nav:similar_", "").split("_")
+            sym = parts[0]
+            tf = parts[1] if len(parts) > 1 else "4h"
+            context.args = [sym, tf]
+            await handle_similar(update, context, mexc_client)
         elif data.startswith("nav:chart_"):
-            sym = data.replace("nav:chart_", "")
-            context.args = [sym, "4h"]
+            parts = data.replace("nav:chart_", "").split("_")
+            sym = parts[0]
+            tf = parts[1] if len(parts) > 1 else "4h"
+            context.args = [sym, tf]
             await handle_chart(update, context, mexc_client)
         elif data == "nav:chart_btc":
             context.args = ["BTC", "15m"]

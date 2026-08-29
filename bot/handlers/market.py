@@ -6,9 +6,10 @@ from telegram.ext import ContextTypes
 from database.db import Database
 from database.models import WatchlistAlert
 from exchange.mexc_client import MexcClient
-from bot.formatters import format_ticker, format_market, format_orderbook, format_watchlist, format_scan_results
+from bot.formatters import format_ticker, format_market, format_orderbook, format_watchlist, format_scan_results, format_similar_recommendations
 from services.chart_generator import generate_candlestick_chart
 from services.market_scanner import MarketScanner
+from services.pattern_discovery import PatternDiscoveryEngine
 
 logger = logging.getLogger(__name__)
 
@@ -258,3 +259,61 @@ async def handle_scan4h(update: Update, context: ContextTypes.DEFAULT_TYPE, clie
     except Exception as e:
         logger.error(f"Error executing 4h scan: {e}")
         await status_msg.edit_text(f"❌ *Scanner Error:* `{e}`", parse_mode="Markdown")
+
+
+async def handle_similar(update: Update, context: ContextTypes.DEFAULT_TYPE, client: MexcClient) -> None:
+    """
+    Handle /similar <symbol> [30m|4h|1d]
+    Discovers top 5 crypto setups matching the pre-move state of the target coin.
+    """
+    args = context.args or []
+    if not args:
+        await update.effective_message.reply_text(
+            "🎯 *Pattern Discovery Usage:*\n"
+            "• `/similar <symbol> [timeframe]`\n\n"
+            "*Examples:*\n"
+            "• `/similar SUI 4h` (Recommended default)\n"
+            "• `/similar SUI 30m`\n"
+            "• `/similar SUI 1d`\n\n"
+            "_Supported timeframes: `30m`, `4h`, `1d` (also `1h`, `15m`)._",
+            parse_mode="Markdown"
+        )
+        return
+
+    symbol = args[0].strip().upper()
+    timeframe = "4h"
+    if len(args) >= 2:
+        raw_tf = args[1].strip().lower()
+        if raw_tf in ["30m", "4h", "1d", "1h", "15m", "5m"]:
+            timeframe = raw_tf
+        else:
+            timeframe = raw_tf
+
+    status_msg = await update.effective_message.reply_text(
+        f"🔍 *Analyzing `{symbol}` pre-move state on {timeframe.upper()}...*\n"
+        f"_Scanning MEXC Futures universe for top 5 statistically similar setups._",
+        parse_mode="Markdown"
+    )
+
+    try:
+        engine = PatternDiscoveryEngine(client)
+        data = await engine.find_similar_setups(target_symbol=symbol, timeframe=timeframe)
+        card_text = format_similar_recommendations(data)
+
+        # Dynamic inline buttons for top recommendations
+        top_candidates = data.get("top_candidates", [])
+        buttons = []
+        chart_row = []
+        for c in top_candidates[:3]:
+            base_sym = c["symbol"].replace("_USDT", "")
+            chart_row.append(InlineKeyboardButton(f"📈 {base_sym}", callback_data=f"nav:chart_{base_sym}_{timeframe}"))
+        if chart_row:
+            buttons.append(chart_row)
+
+        buttons.append([InlineKeyboardButton(f"🔄 Rescan Similar to {symbol}", callback_data=f"nav:similar_{symbol}_{timeframe}")])
+        keyboard = InlineKeyboardMarkup(buttons)
+
+        await status_msg.edit_text(card_text, reply_markup=keyboard, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error in handle_similar for {symbol}: {e}", exc_info=True)
+        await status_msg.edit_text(f"❌ *Pattern Discovery Error:* `{e}`", parse_mode="Markdown")

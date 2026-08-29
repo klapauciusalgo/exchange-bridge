@@ -319,6 +319,7 @@ def format_help() -> str:
         "• `/cancel <order_id>` — Cancel specific order\n"
         "• `/panic` or `/closeall` — 🚨 Emergency kill switch (closes all & cancels all)\n\n"
         "*Alerts & Watchlist:*\n"
+        "• `/similar <symbol> [30m|4h|1d]` — 🎯 Find similar pre-move setups\n"
         "• `/scan4h` — 🔍 Scan 4H markets for Long/Short setups\n"
         "• `/watch <symbol> <above|below> <price>` — Set price alert\n"
         "• `/watchlist` — View active price alerts\n"
@@ -408,4 +409,51 @@ def format_scan_results(data: dict, timeframe: str = "4H") -> str:
     lines.append("━━━━━━━━━━━━━━━━━━━━")
     lines.append("💡 _Use `/open <sym> <long|short> <size> <lev>` to execute._")
 
+    return "\n".join(lines)
+
+
+def format_similar_recommendations(data: dict) -> str:
+    """Format CPDE similar pattern recommendations into a readable Telegram card."""
+    target = data.get("target_symbol", "N/A")
+    tf = data.get("timeframe", "4H")
+    status = data.get("pre_move_status", "Reference State")
+    target_rsi = data.get("target_rsi", 50.0)
+    target_bb = data.get("target_bb_width", 5.0)
+    candidates = data.get("top_candidates", [])
+
+    lines = [
+        f"🎯 *PATTERN DISCOVERY: SIMILAR SETUPS*",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"📌 *Reference Asset:* `{target}` ({tf})",
+        f"• *State:* _{status}_",
+        f"• *Ref RSI:* `{target_rsi:.1f}` │ *Ref BB Width:* `{target_bb:.2f}%`",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "🔮 *TOP 5 SIMILAR PRE-MOVE CANDIDATES:*",
+        "",
+    ]
+
+    if not candidates:
+        lines.append("_No qualifying pre-move setups found matching criteria._")
+    else:
+        medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+        for idx, c in enumerate(candidates):
+            badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
+            sym = c["symbol"]
+            sim = c["similarity_score"]
+            score = c["recommendation_score"]
+            conf = c["confidence"]
+            price = c["price"]
+            chg = c["chg24"]
+            vol_m = c["vol24"] / 1e6
+            rsi = c["rsi"]
+            bb = c["bb_width"]
+            reasons_str = ", ".join(c.get("reasons", ["Matching structure"]))
+
+            lines.append(f"{badge} *{sym}* │ `${price:,.4f}` ({chg:+.2f}%)")
+            lines.append(f"   • *Similarity:* `{sim:.1f}%` │ *Score:* `{score:.1f}/100` ({conf})")
+            lines.append(f"   • *RSI:* `{rsi:.1f}` │ *BB Width:* `{bb:.2f}%` │ *24h Vol:* `${vol_m:.1f}M`")
+            lines.append(f"   • _Why:_ {reasons_str}")
+            lines.append("────────────────────")
+
+    lines.append("💡 _Objective: Find the next setup, not the next pump._")
     return "\n".join(lines)
