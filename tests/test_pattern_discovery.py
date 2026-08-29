@@ -43,13 +43,13 @@ def test_detect_pre_move_window_pump_detection():
     lows = [c - 1.0 for c in closes]
     vols = [1000.0] * len(closes)
 
-    anchor_idx, status, move_pct = PatternDiscoveryEngine.detect_pre_move_window(
+    anchor_idx, status, move_pct, p0, p1 = PatternDiscoveryEngine.detect_pre_move_window(
         closes, highs, lows, vols, lookback=25
     )
 
     assert move_pct >= 20.0
-    assert anchor_idx <= len(closes) - 5  # Anchor is at or before the pump start
-    assert "Pre-pump" in status
+    assert anchor_idx <= len(closes) - 5
+    assert "Base" in status
 
 
 @pytest.mark.asyncio

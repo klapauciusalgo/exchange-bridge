@@ -94,17 +94,17 @@ class PatternDiscoveryEngine:
         lows: List[float],
         volumes: List[float],
         lookback: int = 25,
-    ) -> Tuple[int, str, float]:
+    ) -> Tuple[int, str, float, float, float]:
         """
-        Detects where a recent significant price acceleration / pump began,
+        Detects where a recent significant price acceleration / swing began,
         and returns the end index of the pre-move consolidation window.
 
         Returns:
-            (anchor_end_idx, status_description, move_magnitude_pct)
+            (anchor_end_idx, status_description, move_magnitude_pct, trough_price, peak_price)
         """
         n = len(closes)
         if n < lookback + 5:
-            return n, "Current state", 0.0
+            return n, "Current Consolidation Base", 0.0, closes[-1] if closes else 0.0, closes[-1] if closes else 0.0
 
         # Examine the last 15 candles for explosive upward move
         recent_window = min(15, n - lookback)
@@ -126,10 +126,13 @@ class PatternDiscoveryEngine:
 
         if move_pct >= 5.0 and trough_idx >= lookback:
             candles_ago = n - trough_idx
-            status_desc = f"Pre-pump base ({candles_ago} candles ago before +{move_pct:.1f}% move)"
-            return trough_idx, status_desc, move_pct
+            if move_pct >= 10.0:
+                status_desc = f"Breakout Base ({candles_ago} candles ago: ${trough_price:,.4f} ➔ ${peak_price:,.4f}, +{move_pct:.1f}%)"
+            else:
+                status_desc = f"Intraday Swing Base ({candles_ago} candles ago: ${trough_price:,.4f} ➔ ${peak_price:,.4f}, +{move_pct:.1f}%)"
+            return trough_idx, status_desc, move_pct, trough_price, peak_price
 
-        return n, "Recent consolidation state", move_pct
+        return n, "Current Consolidation Base", move_pct, closes[-1], closes[-1]
 
     async def find_similar_setups(
         self,
@@ -160,7 +163,7 @@ class PatternDiscoveryEngine:
             raise ValueError(f"Could not load data for symbol `{target_symbol}`: {e}")
 
         # 2. Extract Pre-Move Reference Features
-        anchor_idx, pre_move_status, move_pct = self.detect_pre_move_window(
+        anchor_idx, pre_move_status, move_pct, trough_p, peak_p = self.detect_pre_move_window(
             t_closes, t_highs, t_lows, t_vols, lookback=lookback_candles
         )
 
