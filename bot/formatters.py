@@ -435,12 +435,16 @@ def format_similar_recommendations(data: dict) -> str:
         sub_str = "🔮 *TOP 5 SIMILAR CANDIDATES:*"
         obj_str = "💡 _Objective: Statistical market pattern discovery._"
 
+    macro_bars = data.get("macro_bars", 100)
+    micro_bars = data.get("micro_bars", 25)
+
     lines = [
         title_str,
         "━━━━━━━━━━━━━━━━━━━━",
         f"📌 *Reference Asset:* `{target}` ({tf}) │ Bias: `{direction}`",
         f"• *State:* {status}",
         f"• *Ref RSI:* `{target_rsi:.1f}` │ *Ref BB Width:* `{target_bb:.2f}%`",
+        f"• *Horizon:* `{macro_bars}-bar Macro` + `{micro_bars}-bar Base Squeeze`",
         "━━━━━━━━━━━━━━━━━━━━",
         sub_str,
         "",

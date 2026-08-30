@@ -2,6 +2,7 @@
 
 Identifies crypto assets with a current market state that is statistically and technically
 similar to the pre-breakout (LONG) or pre-breakdown (SHORT) state of a target reference asset.
+Features Dual-Horizon Multi-Scale Correlation (100-Bar Macro Structure + 25-Bar Micro Base Squeeze).
 """
 import asyncio
 import logging
@@ -99,6 +100,7 @@ class PatternDiscoveryEngine:
     """
     Finds assets currently in a market state matching the pre-move structure
     (pre-breakout LONG or pre-breakdown SHORT) of a reference asset.
+    Employs Dual-Horizon Multi-Scale Correlation (100-bar macro + 25-bar micro base).
     """
 
     def __init__(self, mexc_client: MexcClient):
@@ -196,14 +198,15 @@ class PatternDiscoveryEngine:
         target_symbol: str,
         timeframe: str = "4h",
         direction: Optional[str] = None,
-        lookback_candles: int = 25,
+        micro_lookback: int = 25,
+        macro_lookback: int = 100,
         max_results: int = 5,
         max_candidate_24h_return: float = 8.0,
         min_24h_volume: float = 200_000.0,
     ) -> Dict:
         """
         Search for top candidate assets currently resembling the reference asset's pre-move state.
-        Supports both LONG (bullish breakout) and SHORT (bearish breakdown) discovery.
+        Uses Dual-Horizon Multi-Scale Correlation (100-bar macro trend + 25-bar micro base squeeze).
         """
         norm_target = self.client.normalize_symbol(target_symbol)
 
@@ -215,24 +218,31 @@ class PatternDiscoveryEngine:
             t_lows = target_kline.get("low", [])
             t_vols = target_kline.get("vol", target_kline.get("amount", []))
 
-            if len(t_closes) < lookback_candles + 10:
+            if len(t_closes) < micro_lookback + 5:
                 raise ValueError(f"Insufficient historical candle data for {norm_target} on {timeframe}")
         except Exception as e:
             logger.error(f"Failed to fetch reference kline for {norm_target}: {e}")
             raise ValueError(f"Could not load data for symbol `{target_symbol}`: {e}")
 
-        # 2. Extract Pre-Move Reference Features
+        # 2. Extract Pre-Move Reference Features (Micro Base & Macro Structure)
         anchor_idx, pre_move_status, move_pct, p0, p1, active_dir = self.detect_pre_move_window(
-            t_closes, t_highs, t_lows, t_vols, lookback=lookback_candles, direction_hint=direction
+            t_closes, t_highs, t_lows, t_vols, lookback=micro_lookback, direction_hint=direction
         )
 
-        ref_closes_slice = t_closes[anchor_idx - lookback_candles : anchor_idx]
-        ref_vols_slice = t_vols[anchor_idx - lookback_candles : anchor_idx] if t_vols else [1.0] * lookback_candles
+        # Micro Slice (25 bars immediate base squeeze)
+        actual_micro_len = min(micro_lookback, anchor_idx)
+        ref_micro_slice = t_closes[anchor_idx - actual_micro_len : anchor_idx]
+        ref_micro_vols = t_vols[anchor_idx - actual_micro_len : anchor_idx] if t_vols else [1.0] * actual_micro_len
+        ref_micro_curve = normalize_series(ref_micro_slice)
 
-        ref_norm_curve = normalize_series(ref_closes_slice)
-        ref_rsi = compute_rsi(ref_closes_slice)
-        ref_bb_width = compute_bb_width(ref_closes_slice)
-        ref_vol_ratio = compute_volume_ratio(ref_vols_slice)
+        # Macro Slice (100 bars market regime / accumulation curve)
+        actual_macro_len = min(macro_lookback, anchor_idx)
+        ref_macro_slice = t_closes[anchor_idx - actual_macro_len : anchor_idx]
+        ref_macro_curve = normalize_series(ref_macro_slice)
+
+        ref_rsi = compute_rsi(ref_micro_slice)
+        ref_bb_width = compute_bb_width(ref_micro_slice)
+        ref_vol_ratio = compute_volume_ratio(ref_micro_vols)
 
         # 3. Fetch All Candidate Tickers
         tickers = await self.client._request("GET", "/api/v1/contract/ticker")
@@ -272,7 +282,7 @@ class PatternDiscoveryEngine:
         candidate_pool.sort(key=lambda x: x["vol24"], reverse=True)
         eval_pool = candidate_pool[:45]
 
-        # 4. Fetch Kline & Calculate Similarity Concurrently
+        # 4. Fetch Kline & Calculate Dual-Horizon Similarity Concurrently
         now = int(time.time())
         tf_seconds = {
             "30m": 30 * 60,
@@ -281,7 +291,9 @@ class PatternDiscoveryEngine:
             "1d": 24 * 3600,
         }.get(timeframe.lower(), 4 * 3600)
 
-        start_ts = now - (lookback_candles + 15) * tf_seconds
+        # Request enough bars for macro correlation (100 bars + buffer)
+        fetch_bars = max(actual_macro_len, actual_micro_len) + 15
+        start_ts = now - fetch_bars * tf_seconds
         sem = asyncio.Semaphore(20)
 
         async def evaluate_candidate(cand: dict) -> Optional[dict]:
@@ -291,68 +303,86 @@ class PatternDiscoveryEngine:
                     kline = await self.client.get_kline(sym, interval=timeframe, start=start_ts, end=now)
                     closes = kline.get("close", [])
                     vols = kline.get("vol", kline.get("amount", []))
-                    if len(closes) < lookback_candles:
+                    if len(closes) < actual_micro_len:
                         return None
 
-                    cand_closes_slice = closes[-lookback_candles:]
-                    cand_vols_slice = vols[-lookback_candles:] if vols else [1.0] * lookback_candles
+                    # Extract candidate micro & macro slices
+                    cand_micro_slice = closes[-actual_micro_len:]
+                    cand_micro_vols = vols[-actual_micro_len:] if vols else [1.0] * actual_micro_len
+                    cand_micro_curve = normalize_series(cand_micro_slice)
 
-                    cand_norm_curve = normalize_series(cand_closes_slice)
-                    cand_rsi = compute_rsi(cand_closes_slice)
-                    cand_bb_width = compute_bb_width(cand_closes_slice)
-                    cand_vol_ratio = compute_volume_ratio(cand_vols_slice)
+                    # Macro slice if enough bars available, else fallback to full available
+                    cand_macro_slice = closes[-actual_macro_len:] if len(closes) >= actual_macro_len else closes
+                    cand_macro_curve = normalize_series(cand_macro_slice)
 
-                    # --- Multi-factor Similarity Calculations ---
-                    # 1. Price Trajectory Correlation (0-100)
-                    corr = np.corrcoef(ref_norm_curve, cand_norm_curve)[0, 1]
-                    if np.isnan(corr):
-                        corr = 0.0
-                    price_sim = float(max(0.0, min(100.0, (corr + 1.0) * 50.0)))
+                    cand_rsi = compute_rsi(cand_micro_slice)
+                    cand_bb_width = compute_bb_width(cand_micro_slice)
+                    cand_vol_ratio = compute_volume_ratio(cand_micro_vols)
 
-                    # 2. RSI Proximity (0-100)
+                    # --- Dual-Horizon Multi-factor Similarity Calculations ---
+                    # 1. Micro Base Squeeze Curve Correlation (0-100)
+                    micro_corr = np.corrcoef(ref_micro_curve, cand_micro_curve)[0, 1]
+                    if np.isnan(micro_corr):
+                        micro_corr = 0.0
+                    micro_sim = float(max(0.0, min(100.0, (micro_corr + 1.0) * 50.0)))
+
+                    # 2. Macro 100-Bar Trend & Regime Correlation (0-100)
+                    # Resample or match lengths if needed
+                    if len(cand_macro_curve) == len(ref_macro_curve):
+                        macro_corr = np.corrcoef(ref_macro_curve, cand_macro_curve)[0, 1]
+                    else:
+                        macro_corr = micro_corr
+                    if np.isnan(macro_corr):
+                        macro_corr = 0.0
+                    macro_sim = float(max(0.0, min(100.0, (macro_corr + 1.0) * 50.0)))
+
+                    # 3. RSI Proximity (0-100)
                     rsi_diff = abs(ref_rsi - cand_rsi)
                     rsi_sim = float(max(0.0, 100.0 - rsi_diff * 3.0))
 
-                    # 3. Volatility Compression Similarity (0-100)
+                    # 4. Volatility Compression Similarity (0-100)
                     bb_diff = abs(ref_bb_width - cand_bb_width)
                     volatility_sim = float(max(0.0, 100.0 - bb_diff * 8.0))
 
-                    # 4. Volume Structure Alignment (0-100)
+                    # 5. Volume Structure Alignment (0-100)
                     vol_diff = abs(ref_vol_ratio - cand_vol_ratio)
                     volume_sim = float(max(0.0, 100.0 - vol_diff * 25.0))
 
-                    # Composite Pattern Similarity
+                    # Dual-Horizon Composite Pattern Similarity (100% total)
                     total_similarity = (
-                        0.40 * price_sim +
-                        0.25 * rsi_sim +
-                        0.20 * volatility_sim +
-                        0.15 * volume_sim
+                        0.30 * micro_sim +       # 30% Micro Base Squeeze Curve
+                        0.25 * macro_sim +       # 25% 100-Bar Macro Trend Structure
+                        0.20 * rsi_sim +         # 20% RSI Proximity
+                        0.15 * volatility_sim +  # 15% Volatility Compression
+                        0.10 * volume_sim        # 10% Volume Structure Alignment
                     )
 
-                    # Recommendation Score
+                    # Recommendation Score (Quality + Multi-scale Edge + Liquidity)
                     rec_score = (
-                        0.55 * total_similarity +
-                        0.25 * rsi_sim +
-                        0.10 * volatility_sim +
+                        0.50 * total_similarity +
+                        0.20 * macro_sim +
+                        0.20 * rsi_sim +
                         0.10 * min(100.0, (cand["vol24"] / 10_000_000.0) * 100.0)
                     )
 
                     # Confidence
-                    if total_similarity >= 88.0 and rsi_diff <= 8.0:
+                    if total_similarity >= 85.0 and macro_sim >= 75.0 and rsi_diff <= 8.0:
                         confidence = "HIGH"
-                    elif total_similarity >= 75.0:
+                    elif total_similarity >= 72.0:
                         confidence = "MEDIUM"
                     else:
                         confidence = "MODERATE"
 
-                    # Explainability points
+                    # Explainability points (Transparent Multi-Scale Rationale)
                     reasons = []
-                    if price_sim >= 85:
+                    if macro_sim >= 80.0:
+                        reasons.append(f"{actual_macro_len}-bar macro structure aligned ({macro_sim:.0f}%)")
+                    if micro_sim >= 82.0:
                         if active_dir == "SHORT":
-                            reasons.append("Matching top distribution curve")
+                            reasons.append("Matching micro top distribution curve")
                         else:
-                            reasons.append("Matching base consolidation curve")
-                    if rsi_diff <= 6:
+                            reasons.append("Matching micro base squeeze curve")
+                    if rsi_diff <= 6.0:
                         reasons.append(f"RSI aligned ({cand_rsi:.1f} vs {ref_rsi:.1f})")
                     if bb_diff <= 3.0:
                         if active_dir == "SHORT":
@@ -360,7 +390,7 @@ class PatternDiscoveryEngine:
                         else:
                             reasons.append("Volatility squeeze / compression match")
                     if not reasons:
-                        reasons.append("Correlated price action structure")
+                        reasons.append("Correlated multi-scale price action")
 
                     return {
                         "symbol": sym,
@@ -373,7 +403,8 @@ class PatternDiscoveryEngine:
                         "funding_rate": cand["funding_rate"],
                         "rsi": round(cand_rsi, 1),
                         "bb_width": round(cand_bb_width, 2),
-                        "price_sim": round(price_sim, 1),
+                        "micro_sim": round(micro_sim, 1),
+                        "macro_sim": round(macro_sim, 1),
                         "rsi_sim": round(rsi_sim, 1),
                         "reasons": reasons,
                     }
@@ -392,6 +423,8 @@ class PatternDiscoveryEngine:
             "timeframe": timeframe.upper(),
             "direction": active_dir,
             "pre_move_status": pre_move_status,
+            "macro_bars": actual_macro_len,
+            "micro_bars": actual_micro_len,
             "target_rsi": round(ref_rsi, 1),
             "target_bb_width": round(ref_bb_width, 2),
             "target_move_pct": round(move_pct, 1),

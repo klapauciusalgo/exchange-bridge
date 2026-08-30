@@ -98,9 +98,9 @@ def test_detect_pre_move_window_pump_and_dump():
 
 @pytest.mark.asyncio
 async def test_find_similar_setups_engine(mexc_client: MexcClient):
-    """Verify PatternDiscoveryEngine evaluates and ranks candidates correctly."""
-    # 1. Target coin (SUI)
-    sui_closes = [1.0 + (i % 3) * 0.01 for i in range(40)]
+    """Verify PatternDiscoveryEngine evaluates and ranks candidates correctly with Dual-Horizon."""
+    # 1. Target coin (SUI) - 120 candles
+    sui_closes = [1.0 + (i % 3) * 0.01 for i in range(120)]
     mexc_client.get_kline = AsyncMock()
 
     # 2. Tickers response
@@ -114,13 +114,13 @@ async def test_find_similar_setups_engine(mexc_client: MexcClient):
         if "SUI" in symbol:
             return {"close": sui_closes, "high": sui_closes, "low": sui_closes, "vol": [100.0] * len(sui_closes)}
         elif "SEI" in symbol:
-            # Very similar shape to SUI
-            return {"close": sui_closes[-25:], "high": sui_closes[-25:], "low": sui_closes[-25:], "vol": [100.0] * 25}
+            # Very similar shape to SUI (both macro and micro)
+            return {"close": sui_closes[-100:], "high": sui_closes[-100:], "low": sui_closes[-100:], "vol": [100.0] * 100}
         elif "TIA" in symbol:
             # Slightly different shape
-            t_c = [5.0 + i * 0.05 for i in range(25)]
-            return {"close": t_c, "high": t_c, "low": t_c, "vol": [100.0] * 25}
-        return {"close": [10.0] * 25, "high": [10.0] * 25, "low": [10.0] * 25, "vol": [100.0] * 25}
+            t_c = [5.0 + i * 0.05 for i in range(100)]
+            return {"close": t_c, "high": t_c, "low": t_c, "vol": [100.0] * 100}
+        return {"close": [10.0] * 100, "high": [10.0] * 100, "low": [10.0] * 100, "vol": [100.0] * 100}
 
     mexc_client.get_kline.side_effect = mock_kline
 
@@ -128,10 +128,14 @@ async def test_find_similar_setups_engine(mexc_client: MexcClient):
     res = await engine.find_similar_setups("SUI", timeframe="4h")
 
     assert res["target_symbol"] == "SUI_USDT"
+    assert res["macro_bars"] == 100
+    assert res["micro_bars"] == 25
     assert len(res["top_candidates"]) >= 1
     # SEI should rank highest due to matching shape
     assert res["top_candidates"][0]["symbol"] == "SEI_USDT"
     assert res["top_candidates"][0]["similarity_score"] > 80.0
+    assert "macro_sim" in res["top_candidates"][0]
+    assert "micro_sim" in res["top_candidates"][0]
     # PUMPED_USDT must be excluded
     candidate_syms = [c["symbol"] for c in res["top_candidates"]]
     assert "PUMPED_USDT" not in candidate_syms
