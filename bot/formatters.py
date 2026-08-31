@@ -526,7 +526,7 @@ def format_macd_scan_results(data: dict) -> str:
 
     lines.append("━━━━━━━━━━━━━━━━━━━━")
 
-    medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"]
+    medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
     # Long Section
     if side_filter != "SHORT":
@@ -534,18 +534,17 @@ def format_macd_scan_results(data: dict) -> str:
         if not longs:
             lines.append("📭 _No liquid pairs currently matching 1H & 4H (0% < MACD% < +2.0%)._")
         else:
-            for idx, item in enumerate(longs[:8]):
+            for idx, item in enumerate(longs):
                 badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
                 sym = item["symbol"]
                 price = item["price"]
                 chg = item["change24"]
                 vol_m = item["vol24"] / 1e6
-                m1_p, s1_p, h1_p = item.get("1h_macd_pct", 0.0), item.get("1h_sig_pct", 0.0), item.get("1h_hist_pct", 0.0)
-                m4_p, s4_p, h4_p = item.get("4h_macd_pct", 0.0), item.get("4h_sig_pct", 0.0), item.get("4h_hist_pct", 0.0)
+                m1_p, s1_p = item.get("1h_macd_pct", 0.0), item.get("1h_sig_pct", 0.0)
+                m4_p, s4_p = item.get("4h_macd_pct", 0.0), item.get("4h_sig_pct", 0.0)
 
                 lines.append(f"{badge} `{sym}` │ `${_format_price(price)}` ({chg:+.2f}%) │ Vol: `${vol_m:.1f}M`")
-                lines.append(f"   • *1H:* MACD: `{m1_p:+.2f}%` (Sig: `{s1_p:+.2f}%`, Hist: `{h1_p:+.2f}%`)")
-                lines.append(f"   • *4H:* MACD: `{m4_p:+.2f}%` (Sig: `{s4_p:+.2f}%`, Hist: `{h4_p:+.2f}%`)")
+                lines.append(f"   • *1H:* `{m1_p:+.2f}%` (Sig: `{s1_p:+.2f}%`) │ *4H:* `{m4_p:+.2f}%` (Sig: `{s4_p:+.2f}%`)")
                 lines.append("────────────────────")
 
     if side_filter is None and longs and shorts:
@@ -557,18 +556,17 @@ def format_macd_scan_results(data: dict) -> str:
         if not shorts:
             lines.append("📭 _No liquid pairs currently matching 1H & 4H (-2.0% < MACD% < 0%)._")
         else:
-            for idx, item in enumerate(shorts[:8]):
+            for idx, item in enumerate(shorts):
                 badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
                 sym = item["symbol"]
                 price = item["price"]
                 chg = item["change24"]
                 vol_m = item["vol24"] / 1e6
-                m1_p, s1_p, h1_p = item.get("1h_macd_pct", 0.0), item.get("1h_sig_pct", 0.0), item.get("1h_hist_pct", 0.0)
-                m4_p, s4_p, h4_p = item.get("4h_macd_pct", 0.0), item.get("4h_sig_pct", 0.0), item.get("4h_hist_pct", 0.0)
+                m1_p, s1_p = item.get("1h_macd_pct", 0.0), item.get("1h_sig_pct", 0.0)
+                m4_p, s4_p = item.get("4h_macd_pct", 0.0), item.get("4h_sig_pct", 0.0)
 
                 lines.append(f"{badge} `{sym}` │ `${_format_price(price)}` ({chg:+.2f}%) │ Vol: `${vol_m:.1f}M`")
-                lines.append(f"   • *1H:* MACD: `{m1_p:+.2f}%` (Sig: `{s1_p:+.2f}%`, Hist: `{h1_p:+.2f}%`)")
-                lines.append(f"   • *4H:* MACD: `{m4_p:+.2f}%` (Sig: `{s4_p:+.2f}%`, Hist: `{h4_p:+.2f}%`)")
+                lines.append(f"   • *1H:* `{m1_p:+.2f}%` (Sig: `{s1_p:+.2f}%`) │ *4H:* `{m4_p:+.2f}%` (Sig: `{s4_p:+.2f}%`)")
                 lines.append("────────────────────")
 
     lines.append("💡 _Normalized PPO Strategy: Fair cross-asset comparison irrespective of coin nominal price._")
