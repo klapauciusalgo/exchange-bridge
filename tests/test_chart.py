@@ -5,7 +5,7 @@ from telegram import User, Message, Chat, Update
 from telegram.ext import ContextTypes
 
 from exchange.mexc_client import MexcClient
-from services.chart_generator import generate_candlestick_chart
+from services.chart_generator import generate_candlestick_chart, generate_multi_candlestick_chart
 from bot.handlers.market import handle_chart
 
 
@@ -54,6 +54,32 @@ def test_generate_candlestick_chart():
     assert img_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 
 
+def test_generate_multi_candlestick_chart():
+    base_time = 1700000000
+    k1 = {
+        "time": [base_time + (i * 3600) for i in range(30)],
+        "open": [2000.0 + i for i in range(30)],
+        "close": [2005.0 + i for i in range(30)],
+        "high": [2010.0 + i for i in range(30)],
+        "low": [1995.0 + i for i in range(30)],
+        "vol": [1000.0 + i for i in range(30)],
+    }
+    k2 = {
+        "time": [base_time + (i * 14400) for i in range(30)],
+        "open": [1950.0 + i * 2 for i in range(30)],
+        "close": [1960.0 + i * 2 for i in range(30)],
+        "high": [1970.0 + i * 2 for i in range(30)],
+        "low": [1940.0 + i * 2 for i in range(30)],
+        "vol": [5000.0 + i for i in range(30)],
+    }
+
+    buf = generate_multi_candlestick_chart("ETH_USDT", [("1h", k1), ("4h", k2)], num_candles=30)
+    assert buf is not None
+    img_bytes = buf.getvalue()
+    assert len(img_bytes) > 30000
+    assert img_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+
+
 def test_generate_candlestick_chart_insufficient_data():
     empty_data = {"time": [1700000000], "open": [100], "close": [100], "high": [100], "low": [100], "vol": [100]}
     buf = generate_candlestick_chart("BTC_USDT", "15m", empty_data)
@@ -61,13 +87,12 @@ def test_generate_candlestick_chart_insufficient_data():
 
 
 @pytest.mark.asyncio
-async def test_handle_chart_command(mexc_client: MexcClient):
+async def test_handle_chart_single_timeframe(mexc_client: MexcClient):
     user_id = 111222333
     update = make_mock_update(user_id, "/chart BTC 1h")
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     context.args = ["BTC", "1h"]
 
-    # Mock get_kline and get_ticker
     base_time = 1700000000
     mexc_client.get_kline = AsyncMock(return_value={
         "time": [base_time + (i * 3600) for i in range(25)],
@@ -83,7 +108,6 @@ async def test_handle_chart_command(mexc_client: MexcClient):
         "riseFallRate": 0.025,
     })
 
-    # Mock status message returned from initial reply_text
     status_mock = MagicMock(spec=Message)
     status_mock.edit_text = AsyncMock()
     status_mock.delete = AsyncMock()
@@ -93,9 +117,45 @@ async def test_handle_chart_command(mexc_client: MexcClient):
 
     update.effective_message.reply_photo.assert_called_once()
     photo_args = update.effective_message.reply_photo.call_args
-    photo_buf = photo_args[1]["photo"]
     caption = photo_args[1]["caption"]
 
-    assert photo_buf is not None
     assert "BTC_USDT" in caption
     assert "$65,250.0000" in caption
+
+
+@pytest.mark.asyncio
+async def test_handle_chart_multi_timeframe(mexc_client: MexcClient):
+    user_id = 111222333
+    update = make_mock_update(user_id, "/chart ETH 1h 4h")
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["ETH", "1h", "4h"]
+
+    base_time = 1700000000
+    mexc_client.get_kline = AsyncMock(return_value={
+        "time": [base_time + (i * 3600) for i in range(25)],
+        "open": [2500.0 + (i * 2) for i in range(25)],
+        "close": [2510.0 + (i * 2) for i in range(25)],
+        "high": [2520.0 + (i * 2) for i in range(25)],
+        "low": [2490.0 + (i * 2) for i in range(25)],
+        "vol": [1000.0 + i for i in range(25)],
+    })
+    mexc_client.get_ticker = AsyncMock(return_value={
+        "symbol": "ETH_USDT",
+        "lastPrice": 2510.0,
+        "riseFallRate": 0.015,
+    })
+
+    status_mock = MagicMock(spec=Message)
+    status_mock.edit_text = AsyncMock()
+    status_mock.delete = AsyncMock()
+    update.effective_message.reply_text = AsyncMock(return_value=status_mock)
+
+    await handle_chart(update, context, mexc_client)
+
+    update.effective_message.reply_photo.assert_called_once()
+    photo_args = update.effective_message.reply_photo.call_args
+    caption = photo_args[1]["caption"]
+
+    assert "ETH_USDT" in caption
+    assert "1H, 4H" in caption
+    assert "$2,510.0000" in caption

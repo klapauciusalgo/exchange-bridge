@@ -1,4 +1,5 @@
 """Market data, price lookup, orderbook, watchlist, and chart handlers."""
+import asyncio
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -7,7 +8,7 @@ from database.db import Database
 from database.models import WatchlistAlert
 from exchange.mexc_client import MexcClient
 from bot.formatters import format_ticker, format_market, format_orderbook, format_watchlist, format_scan_results, format_similar_recommendations
-from services.chart_generator import generate_candlestick_chart
+from services.chart_generator import generate_candlestick_chart, generate_multi_candlestick_chart
 from services.market_scanner import MarketScanner
 from services.pattern_discovery import PatternDiscoveryEngine
 
@@ -86,43 +87,70 @@ async def handle_chart(update: Update, context: ContextTypes.DEFAULT_TYPE, clien
     args = context.args or []
     if not args:
         await update.effective_message.reply_text(
-            "📖 *Usage:* `/chart <symbol> [interval] [candles]`\n\n"
+            "📊 *Chart Generator Usage:*\n"
+            "• `/chart <symbol> [intervals...] [candles]`\n\n"
             "*Examples:*\n"
-            "• `/chart BTC` (Default: 15m, 100 bars)\n"
-            "• `/chart ETH 1h` (1-hour timeframe)\n"
-            "• `/chart SOL 15m 150` (150 candles)\n"
-            "• `/chart WLD 1d 120` (120 daily candles)\n\n"
-            "*Intervals:* `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`, `1w`",
+            "• `/chart ETH 1h 4h` (2 Timeframes in 1 Combined Image)\n"
+            "• `/chart BTC 15m 1h 4h` (3 Timeframes in 1 Combined Image)\n"
+            "• `/chart SOL 4h` (Standard Single Chart)\n"
+            "• `/chart SUI 30m 100` (100 bars)\n\n"
+            "_Supported intervals: `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `8h`, `1d`, `1w`_",
             parse_mode="Markdown"
         )
         return
 
     symbol_arg = args[0].strip()
     symbol = client.normalize_symbol(symbol_arg)
-    interval_str = "15m"
-    candle_count = 100
+    
+    # Parse intervals and optional candle count
+    intervals = []
+    candle_count = None
 
-    # Parse optional interval and candle count
-    if len(args) > 1:
-        arg1 = args[1].strip().lower()
-        if arg1.isdigit():
-            candle_count = int(arg1)
-        else:
-            interval_str = arg1
-            if len(args) > 2 and args[2].strip().isdigit():
-                candle_count = int(args[2].strip())
+    valid_intervals_set = {
+        "1m", "5m", "15m", "30m", "1h", "4h", "8h", "1d", "1w", "1m",
+        "min1", "min5", "min15", "min30", "min60", "hour4", "hour8", "day1", "week1", "month1"
+    }
 
+    for a in args[1:]:
+        a_clean = a.strip().lower()
+        if a_clean.isdigit():
+            candle_count = int(a_clean)
+        elif a_clean in valid_intervals_set or a_clean.endswith(("m", "h", "d", "w")):
+            intervals.append(a_clean)
+
+    if not intervals:
+        intervals = ["15m"]
+
+    if candle_count is None:
+        candle_count = 75 if len(intervals) > 1 else 100
     candle_count = max(20, min(200, candle_count))
 
-    status_msg = await update.effective_message.reply_text(f"⏳ *Generating {candle_count}-bar chart for {symbol} ({interval_str})...*", parse_mode="Markdown")
+    tf_labels = ", ".join(tf.upper() for tf in intervals)
+    status_msg = await update.effective_message.reply_text(
+        f"⏳ *Generating {candle_count}-bar chart for {symbol} ({tf_labels})...*",
+        parse_mode="Markdown"
+    )
 
     try:
-        klines = await client.get_kline(symbol, interval=interval_str)
-        if not klines or not isinstance(klines, dict) or len(klines.get("time", [])) < 5:
-            await status_msg.edit_text(f"❌ Could not retrieve chart data for `{symbol}` ({interval_str}).", parse_mode="Markdown")
+        # Fetch klines for all requested intervals concurrently
+        async def fetch_interval_kline(tf: str):
+            try:
+                k = await client.get_kline(symbol, interval=tf)
+                return tf, k
+            except Exception as ex:
+                logger.error(f"Error fetching kline for {symbol} ({tf}): {ex}")
+                return tf, None
+
+        fetch_tasks = [fetch_interval_kline(tf) for tf in intervals]
+        results = await asyncio.gather(*fetch_tasks)
+
+        valid_intervals_data = [(tf, k) for tf, k in results if k and isinstance(k, dict) and len(k.get("time", [])) >= 5]
+
+        if not valid_intervals_data:
+            await status_msg.edit_text(f"❌ Could not retrieve valid chart data for `{symbol}` ({tf_labels}).", parse_mode="Markdown")
             return
 
-        chart_buf = generate_candlestick_chart(symbol, interval_str, klines, num_candles=candle_count)
+        chart_buf = generate_multi_candlestick_chart(symbol, valid_intervals_data, num_candles=candle_count)
         if not chart_buf:
             await status_msg.edit_text(f"❌ Failed to render chart for `{symbol}`.", parse_mode="Markdown")
             return
@@ -136,7 +164,7 @@ async def handle_chart(update: Update, context: ContextTypes.DEFAULT_TYPE, clien
         chg_sign = "🟢 +" if change_24h >= 0 else "🔴 "
 
         caption = (
-            f"📊 *{symbol}* ({interval_str.upper()})\n"
+            f"📊 *{symbol}* ({tf_labels})\n"
             f"• *Last Price:* `${last_price:,.4f}`\n"
             f"• *24h Change:* {chg_sign}`{change_24h:.2f}%`"
         )
