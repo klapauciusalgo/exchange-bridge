@@ -494,12 +494,12 @@ def format_macd_scan_results(data: dict) -> str:
         price = target_eval["price"]
         chg = target_eval["change24"]
         status = target_eval["status"]
-        m1 = target_eval["1h_macd"]
-        s1 = target_eval["1h_sig"]
-        h1 = target_eval["1h_hist"]
-        m4 = target_eval["4h_macd"]
-        s4 = target_eval["4h_sig"]
-        h4 = target_eval["4h_hist"]
+        m1_p = target_eval.get("1h_macd_pct", 0.0)
+        s1_p = target_eval.get("1h_sig_pct", 0.0)
+        h1_p = target_eval.get("1h_hist_pct", 0.0)
+        m4_p = target_eval.get("4h_macd_pct", 0.0)
+        s4_p = target_eval.get("4h_sig_pct", 0.0)
+        h4_p = target_eval.get("4h_hist_pct", 0.0)
 
         status_icon = "🟢" if "LONG" in status else ("🔴" if "SHORT" in status else "⚪")
 
@@ -508,21 +508,21 @@ def format_macd_scan_results(data: dict) -> str:
             "━━━━━━━━━━━━━━━━━━━━",
             f"• *Price:* `${_format_price(price)}` ({chg:+.2f}%)",
             f"• *Verdict:* {status_icon} *{status}*",
-            f"• *1H:* MACD: `{_format_macd(m1)}` │ Sig: `{_format_macd(s1)}` │ Hist: `{_format_macd(h1)}`",
-            f"• *4H:* MACD: `{_format_macd(m4)}` │ Sig: `{_format_macd(s4)}` │ Hist: `{_format_macd(h4)}`",
+            f"• *1H MACD%:* `{m1_p:+.2f}%` │ Sig%: `{s1_p:+.2f}%` │ Hist%: `{h1_p:+.2f}%`",
+            f"• *4H MACD%:* `{m4_p:+.2f}%` │ Sig%: `{s4_p:+.2f}%` │ Hist%: `{h4_p:+.2f}%`",
             "━━━━━━━━━━━━━━━━━━━━",
             "",
         ])
 
     if side_filter == "LONG":
         lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER (LONG)*")
-        lines.append("📌 _Condition: 1H & 4H (Both 0 < MACD < 2 and 0 < Signal < 2)_")
+        lines.append("📌 _Condition: 1H & 4H (Both 0% < MACD% < +2.0% & 0% < Signal% < +2.0%)_")
     elif side_filter == "SHORT":
         lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER (SHORT)*")
-        lines.append("📌 _Condition: 1H & 4H (Both -2 < MACD < 0 and -2 < Signal < 0)_")
+        lines.append("📌 _Condition: 1H & 4H (Both -2.0% < MACD% < 0% & -2.0% < Signal% < 0%)_")
     else:
         lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER*")
-        lines.append("📌 _Filter: 1H & 4H Aligned (Long: 0 < MACD < 2 │ Short: -2 < MACD < 0)_")
+        lines.append("📌 _Normalized PPO: Long 0% to +2% │ Short -2% to 0% (1H & 4H Aligned)_")
 
     lines.append("━━━━━━━━━━━━━━━━━━━━")
 
@@ -532,7 +532,7 @@ def format_macd_scan_results(data: dict) -> str:
     if side_filter != "SHORT":
         lines.append(f"🟢 *BULLISH DUAL MACD SETUPS (LONG)* ({len(longs)} pairs)")
         if not longs:
-            lines.append("📭 _No liquid pairs currently matching 1H & 4H (0 < MACD, Sig < 2)._")
+            lines.append("📭 _No liquid pairs currently matching 1H & 4H (0% < MACD% < +2.0%)._")
         else:
             for idx, item in enumerate(longs[:8]):
                 badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
@@ -540,12 +540,12 @@ def format_macd_scan_results(data: dict) -> str:
                 price = item["price"]
                 chg = item["change24"]
                 vol_m = item["vol24"] / 1e6
-                m1, s1, h1 = item["1h_macd"], item["1h_sig"], item["1h_hist"]
-                m4, s4, h4 = item["4h_macd"], item["4h_sig"], item["4h_hist"]
+                m1_p, s1_p, h1_p = item.get("1h_macd_pct", 0.0), item.get("1h_sig_pct", 0.0), item.get("1h_hist_pct", 0.0)
+                m4_p, s4_p, h4_p = item.get("4h_macd_pct", 0.0), item.get("4h_sig_pct", 0.0), item.get("4h_hist_pct", 0.0)
 
                 lines.append(f"{badge} `{sym}` │ `${_format_price(price)}` ({chg:+.2f}%) │ Vol: `${vol_m:.1f}M`")
-                lines.append(f"   • *1H:* MACD: `{_format_macd(m1)}` (Sig: `{_format_macd(s1)}`, Hist: `{_format_macd(h1)}`)")
-                lines.append(f"   • *4H:* MACD: `{_format_macd(m4)}` (Sig: `{_format_macd(s4)}`, Hist: `{_format_macd(h4)}`)")
+                lines.append(f"   • *1H:* MACD: `{m1_p:+.2f}%` (Sig: `{s1_p:+.2f}%`, Hist: `{h1_p:+.2f}%`)")
+                lines.append(f"   • *4H:* MACD: `{m4_p:+.2f}%` (Sig: `{s4_p:+.2f}%`, Hist: `{h4_p:+.2f}%`)")
                 lines.append("────────────────────")
 
     if side_filter is None and longs and shorts:
@@ -555,7 +555,7 @@ def format_macd_scan_results(data: dict) -> str:
     if side_filter != "LONG":
         lines.append(f"🔴 *BEARISH DUAL MACD SETUPS (SHORT)* ({len(shorts)} pairs)")
         if not shorts:
-            lines.append("📭 _No liquid pairs currently matching 1H & 4H (-2 < MACD, Sig < 0)._")
+            lines.append("📭 _No liquid pairs currently matching 1H & 4H (-2.0% < MACD% < 0%)._")
         else:
             for idx, item in enumerate(shorts[:8]):
                 badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
@@ -563,14 +563,14 @@ def format_macd_scan_results(data: dict) -> str:
                 price = item["price"]
                 chg = item["change24"]
                 vol_m = item["vol24"] / 1e6
-                m1, s1, h1 = item["1h_macd"], item["1h_sig"], item["1h_hist"]
-                m4, s4, h4 = item["4h_macd"], item["4h_sig"], item["4h_hist"]
+                m1_p, s1_p, h1_p = item.get("1h_macd_pct", 0.0), item.get("1h_sig_pct", 0.0), item.get("1h_hist_pct", 0.0)
+                m4_p, s4_p, h4_p = item.get("4h_macd_pct", 0.0), item.get("4h_sig_pct", 0.0), item.get("4h_hist_pct", 0.0)
 
                 lines.append(f"{badge} `{sym}` │ `${_format_price(price)}` ({chg:+.2f}%) │ Vol: `${vol_m:.1f}M`")
-                lines.append(f"   • *1H:* MACD: `{_format_macd(m1)}` (Sig: `{_format_macd(s1)}`, Hist: `{_format_macd(h1)}`)")
-                lines.append(f"   • *4H:* MACD: `{_format_macd(m4)}` (Sig: `{_format_macd(s4)}`, Hist: `{_format_macd(h4)}`)")
+                lines.append(f"   • *1H:* MACD: `{m1_p:+.2f}%` (Sig: `{s1_p:+.2f}%`, Hist: `{h1_p:+.2f}%`)")
+                lines.append(f"   • *4H:* MACD: `{m4_p:+.2f}%` (Sig: `{s4_p:+.2f}%`, Hist: `{h4_p:+.2f}%`)")
                 lines.append("────────────────────")
 
-    lines.append("💡 _Confluence Strategy: Higher conviction when both 1H momentum & 4H trend align._")
+    lines.append("💡 _Normalized PPO Strategy: Fair cross-asset comparison irrespective of coin nominal price._")
     return "\n".join(lines)
 

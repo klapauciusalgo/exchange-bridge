@@ -103,6 +103,29 @@ def compute_macd(
     return macd_line, signal_line, hist
 
 
+def compute_normalized_macd(
+    prices: List[float],
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+) -> Tuple[List[float], List[float], List[float]]:
+    """
+    Compute Percentage Price Oscillator (Normalized MACD %):
+    MACD% = ((EMA_fast - EMA_slow) / EMA_slow) * 100%
+    Returns (macd_pct_line, signal_pct_line, hist_pct_line).
+    """
+    if len(prices) < slow_period:
+        zeros = [0.0] * len(prices)
+        return zeros, zeros, zeros
+
+    ema_fast = compute_ema(prices, fast_period)
+    ema_slow = compute_ema(prices, slow_period)
+    macd_pct = [((f - s) / s * 100.0) if s != 0 else 0.0 for f, s in zip(ema_fast, ema_slow)]
+    signal_pct = compute_ema(macd_pct, signal_period)
+    hist_pct = [m - s for m, s in zip(macd_pct, signal_pct)]
+    return macd_pct, signal_pct, hist_pct
+
+
 def _render_chart_panel(
     ax_candle: plt.Axes,
     ax_vol: plt.Axes,

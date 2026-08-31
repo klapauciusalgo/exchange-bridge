@@ -5,7 +5,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 from exchange.mexc_client import MexcClient
 from services.pattern_discovery import is_excluded_symbol
-from services.chart_generator import compute_macd
+from services.chart_generator import compute_macd, compute_normalized_macd
 
 logger = logging.getLogger(__name__)
 
@@ -198,11 +198,16 @@ class MarketScanner:
                     c4 = [float(x) for x in k4.get("close", [])]
 
                     if len(c1) >= 26 and len(c4) >= 26:
+                        m1_pct, s1_pct, h1_pct = compute_normalized_macd(c1)
+                        m4_pct, s4_pct, h4_pct = compute_normalized_macd(c4)
                         m1, s1, h1 = compute_macd(c1)
                         m4, s4, h4 = compute_macd(c4)
 
-                        is_long = (0.0 < m1[-1] < 2.0 and 0.0 < s1[-1] < 2.0 and 0.0 < m4[-1] < 2.0 and 0.0 < s4[-1] < 2.0)
-                        is_short = (-2.0 < m1[-1] < 0.0 and -2.0 < s1[-1] < 0.0 and -2.0 < m4[-1] < 0.0 and -2.0 < s4[-1] < 0.0)
+                        cur_m1_p, cur_s1_p, cur_h1_p = m1_pct[-1], s1_pct[-1], h1_pct[-1]
+                        cur_m4_p, cur_s4_p, cur_h4_p = m4_pct[-1], s4_pct[-1], h4_pct[-1]
+
+                        is_long = (0.0 < cur_m1_p < 2.0 and 0.0 < cur_s1_p < 2.0 and 0.0 < cur_m4_p < 2.0 and 0.0 < cur_s4_p < 2.0)
+                        is_short = (-2.0 < cur_m1_p < 0.0 and -2.0 < cur_s1_p < 0.0 and -2.0 < cur_m4_p < 0.0 and -2.0 < cur_s4_p < 0.0)
 
                         status_text = "BULLISH CONFLUENCE (LONG)" if is_long else ("BEARISH CONFLUENCE (SHORT)" if is_short else "MIXED / NO CONFLUENCE")
 
@@ -214,6 +219,12 @@ class MarketScanner:
                             "is_long": is_long,
                             "is_short": is_short,
                             "status": status_text,
+                            "1h_macd_pct": cur_m1_p,
+                            "1h_sig_pct": cur_s1_p,
+                            "1h_hist_pct": cur_h1_p,
+                            "4h_macd_pct": cur_m4_p,
+                            "4h_sig_pct": cur_s4_p,
+                            "4h_hist_pct": cur_h4_p,
                             "1h_macd": m1[-1],
                             "1h_sig": s1[-1],
                             "1h_hist": h1[-1],
@@ -259,14 +270,16 @@ class MarketScanner:
                     if len(c1) < 26 or len(c4) < 26:
                         return None
 
+                    m1_pct, s1_pct, h1_pct = compute_normalized_macd(c1)
+                    m4_pct, s4_pct, h4_pct = compute_normalized_macd(c4)
                     m1, s1, h1 = compute_macd(c1)
                     m4, s4, h4 = compute_macd(c4)
 
-                    cur_m1, cur_s1, cur_h1 = m1[-1], s1[-1], h1[-1]
-                    cur_m4, cur_s4, cur_h4 = m4[-1], s4[-1], h4[-1]
+                    cur_m1_p, cur_s1_p, cur_h1_p = m1_pct[-1], s1_pct[-1], h1_pct[-1]
+                    cur_m4_p, cur_s4_p, cur_h4_p = m4_pct[-1], s4_pct[-1], h4_pct[-1]
 
-                    is_long = (0.0 < cur_m1 < 2.0 and 0.0 < cur_s1 < 2.0 and 0.0 < cur_m4 < 2.0 and 0.0 < cur_s4 < 2.0)
-                    is_short = (-2.0 < cur_m1 < 0.0 and -2.0 < cur_s1 < 0.0 and -2.0 < cur_m4 < 0.0 and -2.0 < cur_s4 < 0.0)
+                    is_long = (0.0 < cur_m1_p < 2.0 and 0.0 < cur_s1_p < 2.0 and 0.0 < cur_m4_p < 2.0 and 0.0 < cur_s4_p < 2.0)
+                    is_short = (-2.0 < cur_m1_p < 0.0 and -2.0 < cur_s1_p < 0.0 and -2.0 < cur_m4_p < 0.0 and -2.0 < cur_s4_p < 0.0)
 
                     if not is_long and not is_short:
                         return None
@@ -284,12 +297,18 @@ class MarketScanner:
                         "funding_rate": cand["funding_rate"],
                         "is_long": is_long,
                         "is_short": is_short,
-                        "1h_macd": cur_m1,
-                        "1h_sig": cur_s1,
-                        "1h_hist": cur_h1,
-                        "4h_macd": cur_m4,
-                        "4h_sig": cur_s4,
-                        "4h_hist": cur_h4,
+                        "1h_macd_pct": cur_m1_p,
+                        "1h_sig_pct": cur_s1_p,
+                        "1h_hist_pct": cur_h1_p,
+                        "4h_macd_pct": cur_m4_p,
+                        "4h_sig_pct": cur_s4_p,
+                        "4h_hist_pct": cur_h4_p,
+                        "1h_macd": m1[-1],
+                        "1h_sig": s1[-1],
+                        "1h_hist": h1[-1],
+                        "4h_macd": m4[-1],
+                        "4h_sig": s4[-1],
+                        "4h_hist": h4[-1],
                     }
                 except Exception as ex:
                     logger.debug(f"MACD scan error for {sym}: {ex}")
