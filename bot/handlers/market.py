@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 from database.db import Database
 from database.models import WatchlistAlert
 from exchange.mexc_client import MexcClient
-from bot.formatters import format_ticker, format_market, format_orderbook, format_watchlist, format_scan_results, format_similar_recommendations
+from bot.formatters import format_ticker, format_market, format_orderbook, format_watchlist, format_scan_results, format_similar_recommendations, format_macd_scan_results
 from services.chart_generator import generate_candlestick_chart, generate_multi_candlestick_chart
 from services.market_scanner import MarketScanner
 from services.pattern_discovery import PatternDiscoveryEngine
@@ -356,3 +356,79 @@ async def handle_similar(update: Update, context: ContextTypes.DEFAULT_TYPE, cli
             await status_msg.edit_text(err_msg, parse_mode="Markdown")
         except Exception:
             await status_msg.edit_text(err_msg)
+
+
+async def handle_macdscan(update: Update, context: ContextTypes.DEFAULT_TYPE, client: MexcClient) -> None:
+    """
+    Handle /macdscan [long|short] [symbol]
+    Scans all MEXC futures pairs for 1H & 4H Dual MACD & Signal confluence.
+    Examples:
+    - /macdscan long
+    - /macdscan short
+    - /macdscan long eth
+    - /macdscan eth
+    """
+    args = context.args or []
+    side_filter: Optional[str] = None
+    target_symbol: Optional[str] = None
+
+    for a in args:
+        a_clean = a.strip().lower()
+        if a_clean in ["long", "buy", "bull", "bullish"]:
+            side_filter = "LONG"
+        elif a_clean in ["short", "sell", "bear", "bearish"]:
+            side_filter = "SHORT"
+        else:
+            target_symbol = a.strip().upper()
+
+    filter_desc = f" ({side_filter})" if side_filter else ""
+    target_desc = f" for `{target_symbol}`" if target_symbol else ""
+
+    status_msg = await update.effective_message.reply_text(
+        f"⚡ *Scanning 1H & 4H Dual MACD Confluence{filter_desc}{target_desc}...*\n"
+        f"_Checking condition: 1H and 4H (Both MACD & Signal > 0 for Long, < 0 for Short)._",
+        parse_mode="Markdown"
+    )
+
+    try:
+        scanner = MarketScanner(client)
+        data = await scanner.scan_macd_confluence(
+            side_filter=side_filter,
+            target_symbol=target_symbol,
+            min_volume_usdt=200_000.0,
+            max_candidates=45,
+        )
+
+        msg = format_macd_scan_results(data)
+
+        # Dynamic inline action buttons
+        buttons = []
+        chart_row = []
+        matched_items = (
+            data.get("longs", []) if side_filter == "LONG"
+            else (data.get("shorts", []) if side_filter == "SHORT"
+                  else (data.get("longs", []) + data.get("shorts", [])))
+        )
+        for item in matched_items[:3]:
+            base_sym = item["symbol"].replace("_USDT", "")
+            chart_row.append(InlineKeyboardButton(f"📈 {base_sym}", callback_data=f"nav:chart_{base_sym}_1h_4h"))
+        if chart_row:
+            buttons.append(chart_row)
+
+        side_param = side_filter.lower() if side_filter else "all"
+        buttons.append([InlineKeyboardButton("🔄 Refresh MACD Scan", callback_data=f"nav:macdscan_{side_param}")])
+        keyboard = InlineKeyboardMarkup(buttons)
+
+        try:
+            await status_msg.edit_text(msg, reply_markup=keyboard, parse_mode="Markdown")
+        except Exception as md_err:
+            logger.warning(f"Markdown edit failed: {md_err}, falling back to plain text")
+            await status_msg.edit_text(msg, reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"Error in handle_macdscan: {e}", exc_info=True)
+        err_msg = f"❌ MACD Scan Error: {e}"
+        try:
+            await status_msg.edit_text(err_msg, parse_mode="Markdown")
+        except Exception:
+            await status_msg.edit_text(err_msg)
+

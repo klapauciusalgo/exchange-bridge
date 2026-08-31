@@ -31,6 +31,7 @@ from bot.handlers import (
     handle_chart,
     handle_scan4h,
     handle_similar,
+    handle_macdscan,
     handle_watch,
     handle_watchlist,
     handle_unwatch,
@@ -129,6 +130,11 @@ def create_bot_app(
     app.add_handler(CommandHandler("similar", restricted(settings, security_manager, db)(_similar)))
     app.add_handler(CommandHandler("sim", restricted(settings, security_manager, db)(_similar)))
 
+    async def _macdscan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await handle_macdscan(update, context, mexc_client)
+    app.add_handler(CommandHandler("macdscan", restricted(settings, security_manager, db)(_macdscan)))
+    app.add_handler(CommandHandler("ms", restricted(settings, security_manager, db)(_macdscan)))
+
     async def _watch(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_watch(update, context, mexc_client, db)
     app.add_handler(CommandHandler("watch", restricted(settings, security_manager, db)(_watch)))
@@ -198,6 +204,10 @@ def create_bot_app(
             await handle_orders(update, context, mexc_client)
         elif data == "nav:scan4h":
             await handle_scan4h(update, context, mexc_client)
+        elif data.startswith("nav:macdscan_"):
+            side = data.replace("nav:macdscan_", "").lower()
+            context.args = [side] if side in ["long", "short"] else []
+            await handle_macdscan(update, context, mexc_client)
         elif data.startswith("nav:similar_"):
             parts = data.replace("nav:similar_", "").split("_")
             sym = parts[0]

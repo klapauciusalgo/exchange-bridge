@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from database.models import UserRiskConfig, WatchlistAlert, DailyTradingStats
 from risk.risk_engine import ValidationResult
+from services.chart_generator import _format_price, _format_macd
 
 
 def format_balance(assets: List[dict], daily_stats: Optional[DailyTradingStats] = None) -> str:
@@ -319,6 +320,7 @@ def format_help() -> str:
         "• `/cancel <order_id>` — Cancel specific order\n"
         "• `/panic` or `/closeall` — 🚨 Emergency kill switch (closes all & cancels all)\n\n"
         "*Alerts & Watchlist:*\n"
+        "• `/macdscan [long|short] [sym]` — ⚡ Scan 1H & 4H Dual MACD Confluence\n"
         "• `/similar <symbol> [30m|4h|1d]` — 🎯 Find similar pre-move setups\n"
         "• `/scan4h` — 🔍 Scan 4H markets for Long/Short setups\n"
         "• `/watch <symbol> <above|below> <price>` — Set price alert\n"
@@ -475,3 +477,100 @@ def format_similar_recommendations(data: dict) -> str:
 
     lines.append(obj_str)
     return "\n".join(lines)
+
+
+def format_macd_scan_results(data: dict) -> str:
+    """Format 1H & 4H Dual MACD Confluence scan results into a readable Telegram card."""
+    longs = data.get("longs", [])
+    shorts = data.get("shorts", [])
+    side_filter = data.get("side_filter")
+    target_eval = data.get("target_eval")
+
+    lines = []
+
+    # 1. Specific Target Evaluation Header if queried
+    if target_eval:
+        sym = target_eval["symbol"]
+        price = target_eval["price"]
+        chg = target_eval["change24"]
+        status = target_eval["status"]
+        m1 = target_eval["1h_macd"]
+        s1 = target_eval["1h_sig"]
+        h1 = target_eval["1h_hist"]
+        m4 = target_eval["4h_macd"]
+        s4 = target_eval["4h_sig"]
+        h4 = target_eval["4h_hist"]
+
+        status_icon = "🟢" if "LONG" in status else ("🔴" if "SHORT" in status else "⚪")
+
+        lines.extend([
+            f"🔍 *ASSET MACD AUDIT:* `{sym}`",
+            "━━━━━━━━━━━━━━━━━━━━",
+            f"• *Price:* `${_format_price(price)}` ({chg:+.2f}%)",
+            f"• *Verdict:* {status_icon} *{status}*",
+            f"• *1H:* MACD: `{_format_macd(m1)}` │ Sig: `{_format_macd(s1)}` │ Hist: `{_format_macd(h1)}`",
+            f"• *4H:* MACD: `{_format_macd(m4)}` │ Sig: `{_format_macd(s4)}` │ Hist: `{_format_macd(h4)}`",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "",
+        ])
+
+    if side_filter == "LONG":
+        lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER (LONG)*")
+        lines.append("📌 _Condition: 1H & 4H (Both MACD > 0 and Signal > 0)_")
+    elif side_filter == "SHORT":
+        lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER (SHORT)*")
+        lines.append("📌 _Condition: 1H & 4H (Both MACD < 0 and Signal < 0)_")
+    else:
+        lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER*")
+        lines.append("📌 _Filter: Both 1H & 4H Timeframes Aligned_")
+
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+
+    medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"]
+
+    # Long Section
+    if side_filter != "SHORT":
+        lines.append(f"🟢 *BULLISH DUAL MACD SETUPS (LONG)* ({len(longs)} pairs)")
+        if not longs:
+            lines.append("📭 _No liquid pairs currently matching 1H & 4H MACD > 0._")
+        else:
+            for idx, item in enumerate(longs[:8]):
+                badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
+                sym = item["symbol"]
+                price = item["price"]
+                chg = item["change24"]
+                vol_m = item["vol24"] / 1e6
+                m1, s1, h1 = item["1h_macd"], item["1h_sig"], item["1h_hist"]
+                m4, s4, h4 = item["4h_macd"], item["4h_sig"], item["4h_hist"]
+
+                lines.append(f"{badge} `{sym}` │ `${_format_price(price)}` ({chg:+.2f}%) │ Vol: `${vol_m:.1f}M`")
+                lines.append(f"   • *1H:* MACD: `{_format_macd(m1)}` (Sig: `{_format_macd(s1)}`, Hist: `{_format_macd(h1)}`)")
+                lines.append(f"   • *4H:* MACD: `{_format_macd(m4)}` (Sig: `{_format_macd(s4)}`, Hist: `{_format_macd(h4)}`)")
+                lines.append("────────────────────")
+
+    if side_filter is None and longs and shorts:
+        lines.append("")
+
+    # Short Section
+    if side_filter != "LONG":
+        lines.append(f"🔴 *BEARISH DUAL MACD SETUPS (SHORT)* ({len(shorts)} pairs)")
+        if not shorts:
+            lines.append("📭 _No liquid pairs currently matching 1H & 4H MACD < 0._")
+        else:
+            for idx, item in enumerate(shorts[:8]):
+                badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
+                sym = item["symbol"]
+                price = item["price"]
+                chg = item["change24"]
+                vol_m = item["vol24"] / 1e6
+                m1, s1, h1 = item["1h_macd"], item["1h_sig"], item["1h_hist"]
+                m4, s4, h4 = item["4h_macd"], item["4h_sig"], item["4h_hist"]
+
+                lines.append(f"{badge} `{sym}` │ `${_format_price(price)}` ({chg:+.2f}%) │ Vol: `${vol_m:.1f}M`")
+                lines.append(f"   • *1H:* MACD: `{_format_macd(m1)}` (Sig: `{_format_macd(s1)}`, Hist: `{_format_macd(h1)}`)")
+                lines.append(f"   • *4H:* MACD: `{_format_macd(m4)}` (Sig: `{_format_macd(s4)}`, Hist: `{_format_macd(h4)}`)")
+                lines.append("────────────────────")
+
+    lines.append("💡 _Confluence Strategy: Higher conviction when both 1H momentum & 4H trend align._")
+    return "\n".join(lines)
+
