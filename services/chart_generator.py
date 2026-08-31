@@ -51,14 +51,33 @@ def _format_vol(val: float) -> str:
         return f"{val:.1f}"
 
 
+def _format_macd(val: float) -> str:
+    """Format MACD, Signal, and Histogram values dynamically based on scale."""
+    if abs(val) == 0:
+        return "0.00"
+    abs_v = abs(val)
+    if abs_v >= 10.0:
+        return f"{val:+.2f}"
+    elif abs_v >= 1.0:
+        return f"{val:+.2f}"
+    elif abs_v >= 0.01:
+        return f"{val:+.4f}"
+    elif abs_v >= 0.0001:
+        return f"{val:+.6f}"
+    else:
+        return f"{val:+.8f}"
+
+
 def compute_ema(series: List[float], period: int) -> List[float]:
-    """Compute Exponential Moving Average."""
+    """Compute Exponential Moving Average using standard Wilder/TradingView smoothing."""
     if not series:
         return []
-    ema = [series[0]]
-    multiplier = 2.0 / (period + 1)
-    for val in series[1:]:
-        ema.append((val - ema[-1]) * multiplier + ema[-1])
+    n = len(series)
+    ema = [0.0] * n
+    ema[0] = series[0]
+    multiplier = 2.0 / (period + 1.0)
+    for i in range(1, n):
+        ema[i] = (series[i] - ema[i - 1]) * multiplier + ema[i - 1]
     return ema
 
 
@@ -286,12 +305,11 @@ def _render_chart_panel(
     vol_title = f"Volume: {_format_vol(cur_vol)}   Vol MA(20): {_format_vol(cur_vol_ma)}"
     ax_vol.text(0.015, 0.88, vol_title, transform=ax_vol.transAxes, fontsize=7.5, fontweight="bold", color=TEXT_COLOR, va="top")
 
-    # 3. MACD Header with exact numbers
+    # 3. MACD Header with exact adaptive precision
     cur_m = macd_line[-1]
     cur_s = signal_line[-1]
     cur_h = hist_line[-1]
-    macd_prec = 4 if abs(cur_m) < 0.1 else 2
-    macd_title = f"MACD(12,26,9): {cur_m:+.{macd_prec}f}   Signal: {cur_s:+.{macd_prec}f}   Hist: {cur_h:+.{macd_prec}f}"
+    macd_title = f"MACD(12,26,9): {_format_macd(cur_m)}   Signal: {_format_macd(cur_s)}   Hist: {_format_macd(cur_h)}"
     ax_macd.text(0.015, 0.88, macd_title, transform=ax_macd.transAxes, fontsize=7.5, fontweight="bold", color="#ffcc80", va="top")
 
 
