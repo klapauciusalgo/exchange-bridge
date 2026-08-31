@@ -80,6 +80,19 @@ def test_generate_multi_candlestick_chart():
     assert img_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 
 
+def test_compute_macd_calculations():
+    from services.chart_generator import compute_macd, compute_ema
+    prices = [100.0 + i for i in range(50)]
+    ema10 = compute_ema(prices, 10)
+    assert len(ema10) == 50
+    assert ema10[-1] > 100.0
+
+    macd, sig, hist = compute_macd(prices, 12, 26, 9)
+    assert len(macd) == 50
+    assert len(sig) == 50
+    assert len(hist) == 50
+
+
 def test_generate_candlestick_chart_insufficient_data():
     empty_data = {"time": [1700000000], "open": [100], "close": [100], "high": [100], "low": [100], "vol": [100]}
     buf = generate_candlestick_chart("BTC_USDT", "15m", empty_data)

@@ -1,4 +1,4 @@
-"""Candlestick and Volume chart generator using Matplotlib with dark financial theme, MA 25 / MA 50, and Multi-Timeframe support."""
+"""Candlestick, Volume, and MACD chart generator using Matplotlib with dark financial theme and multi-timeframe support."""
 import io
 import logging
 from datetime import datetime, timezone
@@ -22,17 +22,54 @@ TEXT_COLOR = "#d1d4dc"
 MA25_COLOR = "#2962ff"  # TradingView Blue
 MA50_COLOR = "#ff9800"  # Amber Orange
 VOL_SMA_COLOR = "#9c27b0"  # Purple
+MACD_COLOR = "#2962ff"  # Blue
+SIGNAL_COLOR = "#ff9800"  # Orange
+ZERO_LINE_COLOR = "#787b86"
+
+
+def compute_ema(series: List[float], period: int) -> List[float]:
+    """Compute Exponential Moving Average."""
+    if not series:
+        return []
+    ema = [series[0]]
+    multiplier = 2.0 / (period + 1)
+    for val in series[1:]:
+        ema.append((val - ema[-1]) * multiplier + ema[-1])
+    return ema
+
+
+def compute_macd(
+    prices: List[float],
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+) -> Tuple[List[float], List[float], List[float]]:
+    """
+    Compute standard MACD (12, 26, 9):
+    Returns (macd_line, signal_line, histogram).
+    """
+    if len(prices) < slow_period:
+        zeros = [0.0] * len(prices)
+        return zeros, zeros, zeros
+
+    ema_fast = compute_ema(prices, fast_period)
+    ema_slow = compute_ema(prices, slow_period)
+    macd_line = [f - s for f, s in zip(ema_fast, ema_slow)]
+    signal_line = compute_ema(macd_line, signal_period)
+    hist = [m - s for m, s in zip(macd_line, signal_line)]
+    return macd_line, signal_line, hist
 
 
 def _render_chart_panel(
     ax_candle: plt.Axes,
     ax_vol: plt.Axes,
+    ax_macd: plt.Axes,
     symbol: str,
     interval_label: str,
     kline_data: Dict[str, list],
     num_candles: int = 80,
 ) -> None:
-    """Render a single candlestick + volume panel into the specified axes."""
+    """Render a 3-tier candlestick + volume + MACD panel into the specified axes."""
     raw_times = kline_data.get("time", [])
     raw_opens = kline_data.get("open", [])
     raw_closes = kline_data.get("close", [])
@@ -58,7 +95,7 @@ def _render_chart_panel(
     n = len(times)
     indices = np.arange(n)
 
-    # Calculate MA 25 and MA 50 on full available closes
+    # Calculate Moving Averages (MA 25 & MA 50) on full closes
     full_closes = [float(x) for x in raw_closes]
     ma_25 = []
     ma_50 = []
@@ -69,11 +106,17 @@ def _render_chart_panel(
         window50 = full_closes[max(0, i - 49):i + 1]
         ma_50.append(np.mean(window50) if len(window50) >= 5 else np.nan)
 
+    # Calculate MACD on full closes, take the last n elements
+    full_macd, full_sig, full_hist = compute_macd(full_closes)
+    macd_line = full_macd[-n:]
+    signal_line = full_sig[-n:]
+    hist_line = full_hist[-n:]
+
     # Configure axes appearance
-    for ax in (ax_candle, ax_vol):
+    for ax in (ax_candle, ax_vol, ax_macd):
         ax.set_facecolor(PANEL_COLOR)
         ax.grid(True, linestyle="--", linewidth=0.5, color=GRID_COLOR, alpha=0.7)
-        ax.tick_params(colors=TEXT_COLOR, labelsize=8)
+        ax.tick_params(colors=TEXT_COLOR, labelsize=7.5)
         for spine in ax.spines.values():
             spine.set_color(GRID_COLOR)
 
@@ -153,6 +196,13 @@ def _render_chart_panel(
     vol_sma = [np.mean(vols[max(0, i - 19):i + 1]) for i in range(n)]
     ax_vol.plot(indices, vol_sma, color=VOL_SMA_COLOR, linewidth=1.0, label="Vol MA", zorder=3)
 
+    # 3. Plot MACD Indicator (MACD Line, Signal Line, and Colored Histogram)
+    hist_colors = [BULL_COLOR if h >= 0 else BEAR_COLOR for h in hist_line]
+    ax_macd.bar(indices, hist_line, color=hist_colors, width=candle_width, alpha=0.65, label="Hist", zorder=2)
+    ax_macd.plot(indices, macd_line, color=MACD_COLOR, linewidth=1.1, label="MACD (12,26)", zorder=4)
+    ax_macd.plot(indices, signal_line, color=SIGNAL_COLOR, linewidth=1.1, label="Signal (9)", zorder=4)
+    ax_macd.axhline(0, color=ZERO_LINE_COLOR, linestyle="--", linewidth=0.6, alpha=0.6)
+
     # X-Axis Time Labels
     step = max(1, n // 6)
     x_ticks = indices[::step]
@@ -169,16 +219,17 @@ def _render_chart_panel(
             x_labels.append(str(idx))
 
     ax_candle.set_xticks([])
-    ax_vol.set_xticks(x_ticks)
-    ax_vol.set_xticklabels(x_labels, fontsize=7.5)
-    ax_vol.set_xlim(-0.8, n - 0.2)
-    ax_candle.set_xlim(-0.8, n - 0.2)
+    ax_vol.set_xticks([])
+    ax_macd.set_xticks(x_ticks)
+    ax_macd.set_xticklabels(x_labels, fontsize=7.5)
+
+    for ax in (ax_candle, ax_vol, ax_macd):
+        ax.set_xlim(-0.8, n - 0.2)
+        ax.yaxis.tick_right()
 
     # Y-Axis Scaling & Padding
     y_margin = (max_val - min_val) * 0.08 if max_val > min_val else 1.0
     ax_candle.set_ylim(min_val - y_margin, max_val + y_margin)
-    ax_candle.yaxis.tick_right()
-    ax_vol.yaxis.tick_right()
 
     # Panel Title & Legend
     change_sign = "+" if change_pct >= 0 else ""
@@ -200,7 +251,16 @@ def _render_chart_panel(
         loc="upper right",
         facecolor=BG_COLOR,
         edgecolor=GRID_COLOR,
-        fontsize=7,
+        fontsize=6.5,
+        labelcolor=TEXT_COLOR,
+        framealpha=0.8
+    )
+
+    ax_macd.legend(
+        loc="upper left",
+        facecolor=BG_COLOR,
+        edgecolor=GRID_COLOR,
+        fontsize=6.5,
         labelcolor=TEXT_COLOR,
         framealpha=0.8
     )
@@ -213,21 +273,20 @@ def generate_candlestick_chart(
     num_candles: int = 100,
 ) -> Optional[io.BytesIO]:
     """
-    Generate single high-resolution candlestick chart with volume and MA 25 / MA 50.
+    Generate single high-resolution candlestick chart with Volume, MA 25/50, and MACD (12,26,9).
     """
     if not kline_data or len(kline_data.get("time", [])) < 5:
         logger.warning(f"Not enough kline data for {symbol}")
         return None
 
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1,
-        figsize=(12, 6.5),
-        dpi=150,
-        gridspec_kw={"height_ratios": [3.5, 1], "hspace": 0.05},
-        facecolor=BG_COLOR
-    )
+    fig = plt.figure(figsize=(12, 8.5), dpi=150, facecolor=BG_COLOR)
+    gs = gridspec.GridSpec(3, 1, height_ratios=[3.0, 0.85, 1.15], hspace=0.08)
 
-    _render_chart_panel(ax1, ax2, symbol, interval_label, kline_data, num_candles=num_candles)
+    ax_candle = fig.add_subplot(gs[0, 0])
+    ax_vol = fig.add_subplot(gs[1, 0])
+    ax_macd = fig.add_subplot(gs[2, 0])
+
+    _render_chart_panel(ax_candle, ax_vol, ax_macd, symbol, interval_label, kline_data, num_candles=num_candles)
 
     buf = io.BytesIO()
     plt.savefig(buf, format="png", facecolor=BG_COLOR, edgecolor="none", bbox_inches="tight", pad_inches=0.15)
@@ -242,7 +301,7 @@ def generate_multi_candlestick_chart(
     num_candles: int = 80,
 ) -> Optional[io.BytesIO]:
     """
-    Generate combined multi-timeframe candlestick chart (e.g. 1H and 4H) on a single unified canvas.
+    Generate combined multi-timeframe chart with Candlestick, Volume, and MACD on a single unified canvas.
     Supports 1, 2, or 3 timeframe panels side-by-side.
     """
     num_panels = len(intervals_data)
@@ -252,17 +311,17 @@ def generate_multi_candlestick_chart(
         interval_label, kline = intervals_data[0]
         return generate_candlestick_chart(symbol, interval_label, kline, num_candles=num_candles)
 
-    # Dynamic sizing based on number of panels (2 columns: 17x7.5, 3 columns: 23x7.5)
     width = 8.5 * num_panels
-    height = 7.2
+    height = 8.8
 
     fig = plt.figure(figsize=(width, height), dpi=150, facecolor=BG_COLOR)
-    gs = gridspec.GridSpec(2, num_panels, height_ratios=[3.5, 1], hspace=0.08, wspace=0.15)
+    gs = gridspec.GridSpec(3, num_panels, height_ratios=[3.0, 0.85, 1.15], hspace=0.08, wspace=0.15)
 
     for col, (interval_label, kline) in enumerate(intervals_data):
         ax_candle = fig.add_subplot(gs[0, col])
         ax_vol = fig.add_subplot(gs[1, col])
-        _render_chart_panel(ax_candle, ax_vol, symbol, interval_label, kline, num_candles=num_candles)
+        ax_macd = fig.add_subplot(gs[2, col])
+        _render_chart_panel(ax_candle, ax_vol, ax_macd, symbol, interval_label, kline, num_candles=num_candles)
 
     buf = io.BytesIO()
     plt.savefig(buf, format="png", facecolor=BG_COLOR, edgecolor="none", bbox_inches="tight", pad_inches=0.15)
