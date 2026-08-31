@@ -386,7 +386,7 @@ async def handle_macdscan(update: Update, context: ContextTypes.DEFAULT_TYPE, cl
 
     status_msg = await update.effective_message.reply_text(
         f"⚡ *Scanning 1H & 4H Dual MACD Confluence{filter_desc}{target_desc}...*\n"
-        f"_Checking condition: 1H and 4H (Both MACD & Signal > 0 for Long, < 0 for Short)._",
+        f"_Checking condition: 1H & 4H (0 < MACD, Signal < 2 for Long; -2 < MACD, Signal < 0 for Short)._",
         parse_mode="Markdown"
     )
 

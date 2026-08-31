@@ -201,8 +201,8 @@ class MarketScanner:
                         m1, s1, h1 = compute_macd(c1)
                         m4, s4, h4 = compute_macd(c4)
 
-                        is_long = (m1[-1] > 0 and s1[-1] > 0 and m4[-1] > 0 and s4[-1] > 0)
-                        is_short = (m1[-1] < 0 and s1[-1] < 0 and m4[-1] < 0 and s4[-1] < 0)
+                        is_long = (0.0 < m1[-1] < 2.0 and 0.0 < s1[-1] < 2.0 and 0.0 < m4[-1] < 2.0 and 0.0 < s4[-1] < 2.0)
+                        is_short = (-2.0 < m1[-1] < 0.0 and -2.0 < s1[-1] < 0.0 and -2.0 < m4[-1] < 0.0 and -2.0 < s4[-1] < 0.0)
 
                         status_text = "BULLISH CONFLUENCE (LONG)" if is_long else ("BEARISH CONFLUENCE (SHORT)" if is_short else "MIXED / NO CONFLUENCE")
 
@@ -265,8 +265,8 @@ class MarketScanner:
                     cur_m1, cur_s1, cur_h1 = m1[-1], s1[-1], h1[-1]
                     cur_m4, cur_s4, cur_h4 = m4[-1], s4[-1], h4[-1]
 
-                    is_long = (cur_m1 > 0 and cur_s1 > 0 and cur_m4 > 0 and cur_s4 > 0)
-                    is_short = (cur_m1 < 0 and cur_s1 < 0 and cur_m4 < 0 and cur_s4 < 0)
+                    is_long = (0.0 < cur_m1 < 2.0 and 0.0 < cur_s1 < 2.0 and 0.0 < cur_m4 < 2.0 and 0.0 < cur_s4 < 2.0)
+                    is_short = (-2.0 < cur_m1 < 0.0 and -2.0 < cur_s1 < 0.0 and -2.0 < cur_m4 < 0.0 and -2.0 < cur_s4 < 0.0)
 
                     if not is_long and not is_short:
                         return None

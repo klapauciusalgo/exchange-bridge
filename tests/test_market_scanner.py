@@ -110,11 +110,11 @@ async def test_scan_macd_confluence_filtering(mexc_client: MexcClient):
     async def mock_get_kline(symbol, interval="1h", **kwargs):
         # 50 candles
         if "UNI" in symbol:
-            # Uptrend -> MACD & Signal > 0
-            return {"close": [1.0 + i * 0.1 for i in range(50)]}
+            # Uptrend with 0 < MACD < 2
+            return {"close": [1.0 + i * 0.05 for i in range(50)]}
         else:
-            # Downtrend -> MACD & Signal < 0
-            return {"close": [100.0 - i * 0.5 for i in range(50)]}
+            # Downtrend with -2 < MACD < 0
+            return {"close": [10.0 - i * 0.05 for i in range(50)]}
 
     mexc_client.get_kline = AsyncMock(side_effect=mock_get_kline)
 
@@ -123,13 +123,13 @@ async def test_scan_macd_confluence_filtering(mexc_client: MexcClient):
 
     assert len(res["longs"]) == 1
     assert res["longs"][0]["symbol"] == "UNI_USDT"
-    assert res["longs"][0]["1h_macd"] > 0
-    assert res["longs"][0]["4h_macd"] > 0
+    assert 0 < res["longs"][0]["1h_macd"] < 2
+    assert 0 < res["longs"][0]["4h_macd"] < 2
 
     assert len(res["shorts"]) == 1
     assert res["shorts"][0]["symbol"] == "BTC_USDT"
-    assert res["shorts"][0]["1h_macd"] < 0
-    assert res["shorts"][0]["4h_macd"] < 0
+    assert -2 < res["shorts"][0]["1h_macd"] < 0
+    assert -2 < res["shorts"][0]["4h_macd"] < 0
 
     # Check target_eval
     assert res["target_eval"] is not None
@@ -195,7 +195,7 @@ async def test_handle_macdscan_command_flow(mexc_client: MexcClient):
         }
     ])
     mexc_client.get_kline = AsyncMock(return_value={
-        "close": [2000.0 + i * 5.0 for i in range(50)]
+        "close": [2000.0 + i * 0.05 for i in range(50)]
     })
 
     status_mock = MagicMock(spec=Message)

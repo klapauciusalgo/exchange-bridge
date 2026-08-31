@@ -516,13 +516,13 @@ def format_macd_scan_results(data: dict) -> str:
 
     if side_filter == "LONG":
         lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER (LONG)*")
-        lines.append("📌 _Condition: 1H & 4H (Both MACD > 0 and Signal > 0)_")
+        lines.append("📌 _Condition: 1H & 4H (Both 0 < MACD < 2 and 0 < Signal < 2)_")
     elif side_filter == "SHORT":
         lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER (SHORT)*")
-        lines.append("📌 _Condition: 1H & 4H (Both MACD < 0 and Signal < 0)_")
+        lines.append("📌 _Condition: 1H & 4H (Both -2 < MACD < 0 and -2 < Signal < 0)_")
     else:
         lines.append("⚡ *MACD 1H & 4H DUAL CONFLUENCE SCANNER*")
-        lines.append("📌 _Filter: Both 1H & 4H Timeframes Aligned_")
+        lines.append("📌 _Filter: 1H & 4H Aligned (Long: 0 < MACD < 2 │ Short: -2 < MACD < 0)_")
 
     lines.append("━━━━━━━━━━━━━━━━━━━━")
 
@@ -532,7 +532,7 @@ def format_macd_scan_results(data: dict) -> str:
     if side_filter != "SHORT":
         lines.append(f"🟢 *BULLISH DUAL MACD SETUPS (LONG)* ({len(longs)} pairs)")
         if not longs:
-            lines.append("📭 _No liquid pairs currently matching 1H & 4H MACD > 0._")
+            lines.append("📭 _No liquid pairs currently matching 1H & 4H (0 < MACD, Sig < 2)._")
         else:
             for idx, item in enumerate(longs[:8]):
                 badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
@@ -555,7 +555,7 @@ def format_macd_scan_results(data: dict) -> str:
     if side_filter != "LONG":
         lines.append(f"🔴 *BEARISH DUAL MACD SETUPS (SHORT)* ({len(shorts)} pairs)")
         if not shorts:
-            lines.append("📭 _No liquid pairs currently matching 1H & 4H MACD < 0._")
+            lines.append("📭 _No liquid pairs currently matching 1H & 4H (-2 < MACD, Sig < 0)._")
         else:
             for idx, item in enumerate(shorts[:8]):
                 badge = medals[idx] if idx < len(medals) else f"#{idx+1}"
