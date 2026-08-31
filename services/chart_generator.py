@@ -1,4 +1,4 @@
-"""Candlestick, Volume, and MACD chart generator using Matplotlib with dark financial theme and multi-timeframe support."""
+"""Candlestick, Volume, and MACD chart generator using Matplotlib with dark financial theme, exact data badges, and multi-timeframe support."""
 import io
 import logging
 from datetime import datetime, timezone
@@ -19,12 +19,36 @@ GRID_COLOR = "#2a2e39"
 BULL_COLOR = "#089981"  # Emerald green
 BEAR_COLOR = "#f23645"  # Soft red
 TEXT_COLOR = "#d1d4dc"
+SUBTEXT_COLOR = "#787b86"
 MA25_COLOR = "#2962ff"  # TradingView Blue
 MA50_COLOR = "#ff9800"  # Amber Orange
 VOL_SMA_COLOR = "#9c27b0"  # Purple
 MACD_COLOR = "#2962ff"  # Blue
 SIGNAL_COLOR = "#ff9800"  # Orange
 ZERO_LINE_COLOR = "#787b86"
+
+
+def _format_price(val: float) -> str:
+    """Format price number with appropriate decimal precision."""
+    if abs(val) < 0.001:
+        return f"{val:,.6f}"
+    elif abs(val) < 1.0:
+        return f"{val:,.4f}"
+    else:
+        return f"{val:,.2f}"
+
+
+def _format_vol(val: float) -> str:
+    """Format volume number with K/M/B suffixes."""
+    abs_v = abs(val)
+    if abs_v >= 1_000_000_000:
+        return f"{val / 1e9:.2f}B"
+    elif abs_v >= 1_000_000:
+        return f"{val / 1e6:.2f}M"
+    elif abs_v >= 1_000:
+        return f"{val / 1e3:.2f}K"
+    else:
+        return f"{val:.1f}"
 
 
 def compute_ema(series: List[float], period: int) -> List[float]:
@@ -69,7 +93,7 @@ def _render_chart_panel(
     kline_data: Dict[str, list],
     num_candles: int = 80,
 ) -> None:
-    """Render a 3-tier candlestick + volume + MACD panel into the specified axes."""
+    """Render a 3-tier candlestick + volume + MACD panel with exact numerical badges."""
     raw_times = kline_data.get("time", [])
     raw_opens = kline_data.get("open", [])
     raw_closes = kline_data.get("close", [])
@@ -149,7 +173,7 @@ def _render_chart_panel(
     ax_candle.plot(indices, ma_25, color=MA25_COLOR, linewidth=1.2, label="MA 25", zorder=4)
     ax_candle.plot(indices, ma_50, color=MA50_COLOR, linewidth=1.2, label="MA 50", zorder=4)
 
-    # Highlight High and Low
+    # Highlight High and Low Markers
     max_idx = int(np.argmax(highs))
     min_idx = int(np.argmin(lows))
     max_val = highs[max_idx]
@@ -157,7 +181,7 @@ def _render_chart_panel(
 
     ax_candle.scatter([max_idx], [max_val], color="#ffffff", s=14, zorder=5)
     ax_candle.annotate(
-        f"H: ${max_val:,.4f}" if max_val < 10 else f"H: ${max_val:,.2f}",
+        f"H: ${_format_price(max_val)}",
         xy=(max_idx, max_val),
         xytext=(0, 6),
         textcoords="offset points",
@@ -170,7 +194,7 @@ def _render_chart_panel(
 
     ax_candle.scatter([min_idx], [min_val], color="#ffffff", s=14, zorder=5)
     ax_candle.annotate(
-        f"L: ${min_val:,.4f}" if min_val < 10 else f"L: ${min_val:,.2f}",
+        f"L: ${_format_price(min_val)}",
         xy=(min_idx, min_val),
         xytext=(0, -11),
         textcoords="offset points",
@@ -188,6 +212,17 @@ def _render_chart_panel(
     last_color = BULL_COLOR if last_price >= first_price else BEAR_COLOR
     ax_candle.axhline(last_price, color=last_color, linestyle=":", linewidth=1.0, alpha=0.8)
 
+    # Right Axis Price Badge (TradingView Style)
+    ax_candle.text(
+        1.01, last_price,
+        f" ${_format_price(last_price)} ",
+        transform=ax_candle.get_yaxis_transform(),
+        va="center", ha="left",
+        fontsize=7.5, fontweight="bold",
+        color="#ffffff",
+        bbox=dict(boxstyle="square,pad=0.2", fc=last_color, ec="none")
+    )
+
     # 2. Plot Volume
     bar_colors = [BULL_COLOR if closes[i] >= opens[i] else BEAR_COLOR for i in range(n)]
     ax_vol.bar(indices, vols, color=bar_colors, width=candle_width, alpha=0.85, zorder=2)
@@ -199,8 +234,8 @@ def _render_chart_panel(
     # 3. Plot MACD Indicator (MACD Line, Signal Line, and Colored Histogram)
     hist_colors = [BULL_COLOR if h >= 0 else BEAR_COLOR for h in hist_line]
     ax_macd.bar(indices, hist_line, color=hist_colors, width=candle_width, alpha=0.65, label="Hist", zorder=2)
-    ax_macd.plot(indices, macd_line, color=MACD_COLOR, linewidth=1.1, label="MACD (12,26)", zorder=4)
-    ax_macd.plot(indices, signal_line, color=SIGNAL_COLOR, linewidth=1.1, label="Signal (9)", zorder=4)
+    ax_macd.plot(indices, macd_line, color=MACD_COLOR, linewidth=1.1, label="MACD", zorder=4)
+    ax_macd.plot(indices, signal_line, color=SIGNAL_COLOR, linewidth=1.1, label="Signal", zorder=4)
     ax_macd.axhline(0, color=ZERO_LINE_COLOR, linestyle="--", linewidth=0.6, alpha=0.6)
 
     # X-Axis Time Labels
@@ -231,39 +266,33 @@ def _render_chart_panel(
     y_margin = (max_val - min_val) * 0.08 if max_val > min_val else 1.0
     ax_candle.set_ylim(min_val - y_margin, max_val + y_margin)
 
-    # Panel Title & Legend
+    # --- EXACT NUMERICAL BADGES & HEADERS ---
+    # 1. Main Candlestick Title & Latest Exact OHLC
     change_sign = "+" if change_pct >= 0 else ""
-    title_price_str = f"${last_price:,.4f}" if last_price < 10 else f"${last_price:,.2f}"
-    title_text = f"{symbol}  •  {interval_label.upper()}  •  {title_price_str}"
-    sub_title = f"{change_sign}{change_pct:.2f}% ({n} bars)"
+    title_text = f"{symbol}  •  {interval_label.upper()}  •  ${_format_price(last_price)} ({change_sign}{change_pct:.2f}%)"
+    ax_candle.text(0.015, 0.95, title_text, transform=ax_candle.transAxes, fontsize=9.5, fontweight="bold", color=last_color, va="top")
 
-    ax_candle.text(
-        0.015, 0.94,
-        f"{title_text} ({sub_title})",
-        transform=ax_candle.transAxes,
-        fontsize=10,
-        fontweight="bold",
-        color=last_color,
-        va="top"
-    )
+    cur_o, cur_h, cur_l, cur_c = opens[-1], highs[-1], lows[-1], closes[-1]
+    cur_ma25 = ma_25[-1] if ma_25 and not np.isnan(ma_25[-1]) else cur_c
+    cur_ma50 = ma_50[-1] if ma_50 and not np.isnan(ma_50[-1]) else cur_c
+    ohlc_str = f"O: ${_format_price(cur_o)}   H: ${_format_price(cur_h)}   L: ${_format_price(cur_l)}   C: ${_format_price(cur_c)}"
+    ma_str = f"MA(25): ${_format_price(cur_ma25)}   MA(50): ${_format_price(cur_ma50)}"
+    ax_candle.text(0.015, 0.86, ohlc_str, transform=ax_candle.transAxes, fontsize=7.5, color=TEXT_COLOR, va="top")
+    ax_candle.text(0.015, 0.77, ma_str, transform=ax_candle.transAxes, fontsize=7.5, color="#80d8ff", va="top")
 
-    ax_candle.legend(
-        loc="upper right",
-        facecolor=BG_COLOR,
-        edgecolor=GRID_COLOR,
-        fontsize=6.5,
-        labelcolor=TEXT_COLOR,
-        framealpha=0.8
-    )
+    # 2. Volume Header with exact numbers
+    cur_vol = vols[-1]
+    cur_vol_ma = vol_sma[-1]
+    vol_title = f"Volume: {_format_vol(cur_vol)}   Vol MA(20): {_format_vol(cur_vol_ma)}"
+    ax_vol.text(0.015, 0.88, vol_title, transform=ax_vol.transAxes, fontsize=7.5, fontweight="bold", color=TEXT_COLOR, va="top")
 
-    ax_macd.legend(
-        loc="upper left",
-        facecolor=BG_COLOR,
-        edgecolor=GRID_COLOR,
-        fontsize=6.5,
-        labelcolor=TEXT_COLOR,
-        framealpha=0.8
-    )
+    # 3. MACD Header with exact numbers
+    cur_m = macd_line[-1]
+    cur_s = signal_line[-1]
+    cur_h = hist_line[-1]
+    macd_prec = 4 if abs(cur_m) < 0.1 else 2
+    macd_title = f"MACD(12,26,9): {cur_m:+.{macd_prec}f}   Signal: {cur_s:+.{macd_prec}f}   Hist: {cur_h:+.{macd_prec}f}"
+    ax_macd.text(0.015, 0.88, macd_title, transform=ax_macd.transAxes, fontsize=7.5, fontweight="bold", color="#ffcc80", va="top")
 
 
 def generate_candlestick_chart(
@@ -273,7 +302,7 @@ def generate_candlestick_chart(
     num_candles: int = 100,
 ) -> Optional[io.BytesIO]:
     """
-    Generate single high-resolution candlestick chart with Volume, MA 25/50, and MACD (12,26,9).
+    Generate single high-resolution candlestick chart with Volume, MA 25/50, and MACD (12,26,9) with exact data badges.
     """
     if not kline_data or len(kline_data.get("time", [])) < 5:
         logger.warning(f"Not enough kline data for {symbol}")
@@ -301,7 +330,7 @@ def generate_multi_candlestick_chart(
     num_candles: int = 80,
 ) -> Optional[io.BytesIO]:
     """
-    Generate combined multi-timeframe chart with Candlestick, Volume, and MACD on a single unified canvas.
+    Generate combined multi-timeframe chart with Candlestick, Volume, and MACD on a single unified canvas with exact data badges.
     Supports 1, 2, or 3 timeframe panels side-by-side.
     """
     num_panels = len(intervals_data)
